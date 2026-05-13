@@ -96,7 +96,8 @@ write_env_file() {
   local public_origin="$1"
   local admin_email="$2"
   local admin_password="$3"
-  local nextauth_secret="$4"
+  local admin_phone="$4"
+  local nextauth_secret="$5"
 
   cat > "${APP_DIR}/.env.local" <<EOF
 MONGODB_URI=mongodb://127.0.0.1:${MONGO_PORT}/${MONGO_DB}?directConnection=true
@@ -106,6 +107,7 @@ NEXTAUTH_URL=${public_origin}
 NEXTAUTH_SECRET=${nextauth_secret}
 ADMIN_EMAIL=${admin_email}
 ADMIN_PASSWORD=${admin_password}
+ADMIN_PHONE=${admin_phone}
 EOF
 
   chown "${APP_USER}:${APP_GROUP}" "${APP_DIR}/.env.local"
@@ -243,6 +245,7 @@ main() {
 
   prompt ADMIN_EMAIL_INPUT "Admin email" "admin@teleir.local"
   prompt ADMIN_PASSWORD_INPUT "Admin password" "$(openssl rand -base64 18 | tr -d '\n' | cut -c1-20)" "1"
+  prompt ADMIN_PHONE_INPUT "Admin phone number" "09123456789"
   prompt ENABLE_SSL "Enable SSL with Let's Encrypt? (yes/no)" "no"
   SSL_EMAIL=""
   if [[ "$ENABLE_SSL" == "yes" ]]; then
@@ -267,7 +270,7 @@ main() {
   install_mongodb
   ensure_user
   deploy_project_files
-  write_env_file "$public_origin" "$ADMIN_EMAIL_INPUT" "$ADMIN_PASSWORD_INPUT" "$nextauth_secret"
+  write_env_file "$public_origin" "$ADMIN_EMAIL_INPUT" "$ADMIN_PASSWORD_INPUT" "$ADMIN_PHONE_INPUT" "$nextauth_secret"
   install_dependencies_and_build
   write_service_file
   write_nginx_http_config "$server_names"
@@ -281,6 +284,7 @@ main() {
   echo "Tele IR installation completed."
   echo "Open: ${public_origin}/login"
   echo "Admin email: ${ADMIN_EMAIL_INPUT}"
+  echo "Admin phone: ${ADMIN_PHONE_INPUT}"
 }
 
 main "$@"

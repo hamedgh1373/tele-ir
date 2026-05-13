@@ -218,9 +218,17 @@ export async function ensureBootstrapAdmin() {
   const now = new Date().toISOString();
   const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
   const password = process.env.ADMIN_PASSWORD;
+  const adminPhone = normalizeIranPhone(process.env.ADMIN_PHONE || "");
 
   const existingAdmin = (await db.collection("users").findOne({ role: "admin" })) as DbUser | null;
   if (existingAdmin) {
+    if (adminPhone && existingAdmin.phone !== adminPhone) {
+      await db.collection("users").updateOne(
+        { id: existingAdmin.id },
+        { $set: { phone: adminPhone, updatedAt: now } }
+      );
+      existingAdmin.phone = adminPhone;
+    }
     await ensureDefaultSettings(existingAdmin.email || existingAdmin.id);
     await ensureAdminSavedMessages(existingAdmin);
     return existingAdmin;
@@ -234,16 +242,17 @@ export async function ensureBootstrapAdmin() {
     return legacyAdmin;
   }
 
-  if (!email || !password) {
+  if (!adminPhone && (!email || !password)) {
     await ensureDefaultSettings("system");
     return null;
   }
 
   const admin = {
     id: randomUUID(),
-    email,
+    email: email || (adminPhone ? `${adminPhone.replace(/\D+/g, "")}@teleir.local` : `admin-${randomUUID()}@teleir.local`),
+    phone: adminPhone || undefined,
     name: "Teleir Admin",
-    passwordHash: await bcrypt.hash(password, 12),
+    passwordHash: await bcrypt.hash(password || randomUUID(), 12),
     role: "admin" as const,
     uploadLimitMb: 1024,
     createdAt: now,
