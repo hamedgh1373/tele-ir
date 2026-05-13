@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { addSecurityHeaders, enforceSameOrigin } from "@/lib/request-security";
 const PUBLIC_FILE = /\.[^/]+$/;
 
 function noStore(response: NextResponse) {
@@ -10,7 +11,7 @@ function noStore(response: NextResponse) {
   response.headers.set("Pragma", "no-cache");
   response.headers.set("Expires", "0");
   response.headers.set("Surrogate-Control", "no-store");
-  return response;
+  return addSecurityHeaders(response);
 }
 
 function buildExternalUrl(request: NextRequest, path: string) {
@@ -41,10 +42,17 @@ function isStaticOrPublicPath(pathname: string) {
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
+  if (pathname.startsWith("/api/")) {
+    const blocked = enforceSameOrigin(request);
+    if (blocked) {
+      return blocked;
+    }
+  }
+
   // Static assets must never be authenticated or redirected.
   // If JS/CSS chunks receive 403, React hydration fails and desktop clicks/forms stop working.
   if (isStaticOrPublicPath(pathname)) {
-    return NextResponse.next();
+    return addSecurityHeaders(NextResponse.next());
   }
 
   const protectedPath =
@@ -77,6 +85,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api|_next|assets|uploads|favicon.ico|manifest.json|sw.js|.*\\..*).*)",
+    "/((?!_next|assets|uploads|favicon.ico|manifest.json|sw.js|.*\\..*).*)",
   ],
 };

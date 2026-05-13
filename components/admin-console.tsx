@@ -5,7 +5,6 @@ import { FormEvent, useEffect, useState } from "react";
 export type UserItem = {
   id: string;
   name: string;
-  email: string;
   phone?: string;
   role: "admin" | "user";
   uploadLimitMb?: number;
@@ -61,8 +60,6 @@ export function AdminConsole({
 }) {
   const [users, setUsers] = useState<UserItem[]>(initialUsers);
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [role, setRole] = useState<"admin" | "user">("user");
   const [uploadLimitMb, setUploadLimitMb] = useState("100");
   const [message, setMessage] = useState("");
@@ -145,7 +142,7 @@ export function AdminConsole({
     const response = await fetch(editingUser ? `/api/users/${editingUser.id}` : "/api/users", {
       method: editingUser ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, phone, password, role, uploadLimitMb })
+      body: JSON.stringify({ name, phone, role, uploadLimitMb })
     });
 
     const data = await response.json();
@@ -164,8 +161,6 @@ export function AdminConsole({
 
   function resetForm() {
     setName("");
-    setEmail("");
-    setPassword("");
     setPhone("");
     setRole("user");
     setUploadLimitMb("100");
@@ -176,11 +171,9 @@ export function AdminConsole({
     setMessage("");
     setEditingUser(user);
     setName(user.name);
-    setEmail(user.email);
     setRole(user.role);
     setPhone(user.phone || "");
     setUploadLimitMb(String(user.uploadLimitMb || 100));
-    setPassword("");
   }
 
   async function saveSmsSettings() {
@@ -313,20 +306,12 @@ export function AdminConsole({
                 <input value={name} onChange={(event) => setName(event.target.value)} required />
               </label>
               <label>
-                <span>ایمیل</span>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                />
-              </label>
-              <label>
                 <span>شماره موبایل</span>
                 <input
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
                   placeholder="09123456789"
+                  required
                 />
               </label>
               <div className="two-col-form">
@@ -349,17 +334,6 @@ export function AdminConsole({
                   />
                 </label>
               </div>
-              <label>
-                <span>{editingUser ? "رمز عبور جدید" : "رمز عبور"}</span>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  minLength={6}
-                  required={!editingUser}
-                  placeholder={editingUser ? "اگر خالی بماند تغییر نمی‌کند" : ""}
-                />
-              </label>
               {message ? <p className="error-text">{message}</p> : null}
               <div className="form-actions">
                 <button className="primary-btn" type="submit" disabled={loading}>
@@ -387,7 +361,6 @@ export function AdminConsole({
                       <div className="admin-avatar">{user.name.slice(0, 1) || "T"}</div>
                       <div>
                         <strong>{user.name}</strong>
-                        <span>{user.email}</span>
                         {user.phone ? <span>{user.phone}</span> : null}
                       </div>
                     </div>

@@ -100,7 +100,9 @@ export async function GET(
       "Content-Type": fileDoc.mimeType || "application/octet-stream",
       "Content-Length": String(data.length),
       "Content-Disposition": `${fileDoc.mimeType?.startsWith("image/") ? "inline" : "attachment"}; filename="${encodeURIComponent(fileDoc.originalName)}"`,
-      "Cache-Control": "private, max-age=86400"
+      "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; sandbox"
     }
   });
 }

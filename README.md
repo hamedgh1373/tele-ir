@@ -396,8 +396,7 @@ sudo bash configure-sms.sh --enable --api-key "YOUR_SMSIR_API_KEY" --line-number
 - `TELEIR_LEGACY_DB_NAME`
 - `NEXTAUTH_URL`
 - `NEXTAUTH_SECRET`
-- `ADMIN_EMAIL`
-- `ADMIN_PASSWORD`
+- `ADMIN_PHONE`
 
 ### اجرای دستی در محیط پروداکشن
 
@@ -431,3 +430,29 @@ sudo bash update.sh
 - این پروژه برای استقرار self-hosted طراحی شده است.
 - برای استفاده عمومی روی اینترنت، بهتر است فایروال، آپدیت‌های سیستم و وضعیت SSL را به‌صورت منظم نگهداری کنید.
 - اگر تنظیمات SMS انجام نشده باشد، ورود کاربران با شماره موبایل کار نخواهد کرد چون این پروژه ورود ایمیلی ندارد.
+
+---
+
+## Support The Project
+
+If Tele IR helps your work and you would like to support continued development, you can buy me a coffee:
+
+| Network | Address |
+|---|---|
+| Bitcoin | `bc1qtngl4rl0yt33g02kew5jd0jf9z6n0jyw2eyn9z` |
+| Tron | `TPM71xjKTmhjPDqFZw8rtc9mbeaRzhwP5H` |
+| Tether (TRC20) | `TJWJDLwbnsi2KXjGmfr8YwP5hTW4oEDu5E` |
+
+Thank you for helping keep the project moving.
+
+## حمایت از پروژه
+
+اگر تل ایران برای شما مفید بوده و دوست دارید از ادامه توسعه آن حمایت کنید، می‌توانید به صرف یک قهوه از پروژه پشتیبانی کنید:
+
+| شبکه | آدرس |
+|---|---|
+| بیت کویین | `bc1qtngl4rl0yt33g02kew5jd0jf9z6n0jyw2eyn9z` |
+| ترون | `TPM71xjKTmhjPDqFZw8rtc9mbeaRzhwP5H` |
+| تتر (TRC20) | `TJWJDLwbnsi2KXjGmfr8YwP5hTW4oEDu5E` |
+
+سپاس از حمایت شما.

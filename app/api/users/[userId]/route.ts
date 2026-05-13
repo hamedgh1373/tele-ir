@@ -1,6 +1,5 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { authOptions, ensureBootstrapAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/chat";
@@ -8,11 +7,9 @@ import { normalizeIranPhone } from "@/lib/sms";
 
 const updateUserSchema = z.object({
   name: z.string().trim().min(2).max(60),
-  email: z.string().trim().email(),
-  phone: z.string().trim().optional().default(""),
+  phone: z.string().trim().min(1),
   role: z.enum(["admin", "user"]),
-  uploadLimitMb: z.coerce.number().int().min(1).max(1024),
-  password: z.string().min(6).max(72).optional().or(z.literal(""))
+  uploadLimitMb: z.coerce.number().int().min(1).max(1024)
 });
 
 export async function PATCH(
@@ -44,9 +41,8 @@ export async function PATCH(
   }
 
   const db = await getDb();
-  const email = parsed.data.email.toLowerCase();
-  const phone = parsed.data.phone ? normalizeIranPhone(parsed.data.phone) : "";
-  if (parsed.data.phone && !phone) {
+  const phone = normalizeIranPhone(parsed.data.phone);
+  if (!phone) {
     return NextResponse.json({ error: "شماره موبایل معتبر نیست." }, { status: 400 });
   }
   const existing = await db.collection("users").findOne({ id: userId });
@@ -69,38 +65,23 @@ export async function PATCH(
     }
   }
 
-  const duplicate = await db.collection("users").findOne({
-    email,
+  const duplicatePhone = await db.collection("users").findOne({
+    phone,
     id: { $ne: userId }
   });
-
-  if (duplicate) {
-    return NextResponse.json({ error: "این ایمیل قبلا ثبت شده است." }, { status: 409 });
-  }
-
-  if (phone) {
-    const duplicatePhone = await db.collection("users").findOne({
-      phone,
-      id: { $ne: userId }
-    });
-    if (duplicatePhone) {
-      return NextResponse.json({ error: "این شماره قبلا ثبت شده است." }, { status: 409 });
-    }
+  if (duplicatePhone) {
+    return NextResponse.json({ error: "این شماره قبلا ثبت شده است." }, { status: 409 });
   }
 
   const updates: Record<string, unknown> = {
     name: parsed.data.name,
-    email,
-    phone: phone || undefined,
+    email: `${phone.replace(/\D+/g, "")}@teleir.local`,
+    phone,
     role: parsed.data.role,
     uploadLimitMb: parsed.data.uploadLimitMb,
     updatedAt: new Date().toISOString(),
     updatedBy: session.user.email
   };
-
-  if (parsed.data.password) {
-    updates.passwordHash = await bcrypt.hash(parsed.data.password, 12);
-  }
 
   const result = await db.collection("users").findOneAndUpdate(
     { id: userId },

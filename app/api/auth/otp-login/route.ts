@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { encode } from "next-auth/jwt";
 import { NextResponse } from "next/server";
 import { getTeleirDb } from "@/lib/mongodb";
+import { consumeRateLimit, getClientIpFromHeaders, hashOtpCode, secureCookieOptions } from "@/lib/security";
 import { normalizeIranPhone } from "@/lib/sms";
 
 type DbUser = {
@@ -70,10 +71,7 @@ function redirectTo(path: string) {
 function redirectWithError(error: string) {
   const response = redirectTo(`/login?error=${encodeURIComponent(error)}`);
   response.cookies.set(otpErrorCookieName, encodeURIComponent(error), {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 2 * 60
+    ...secureCookieOptions(2 * 60)
   });
   return response;
 }
@@ -84,12 +82,37 @@ export async function POST(request: Request) {
   const requestId = String(body.requestId || "").trim();
   const otpCode = String(body.otpCode || "").replace(/\D+/g, "").slice(0, 6);
   const phone = normalizeIranPhone(phoneInput);
+  const clientIp = getClientIpFromHeaders(request.headers);
 
   if (!phone || !requestId || otpCode.length !== 6) {
     return redirectWithError("کد یا شماره معتبر نیست.");
   }
 
   const db = await getTeleirDb();
+  const ipLimit = await consumeRateLimit({
+    scope: "otp-verify-ip",
+    key: clientIp,
+    limit: 40,
+    windowMs: 15 * 60 * 1000
+  });
+  if (!ipLimit.ok) {
+    return redirectWithError("تعداد تلاش‌های ورود زیاد شده است. کمی بعد دوباره امتحان کنید.");
+  }
+
+  const requestLimit = await consumeRateLimit({
+    scope: "otp-verify-request",
+    key: requestId,
+    limit: 8,
+    windowMs: 10 * 60 * 1000
+  });
+  if (!requestLimit.ok) {
+    await db.collection("otp_codes").updateOne(
+      { id: requestId, usedAt: null },
+      { $set: { usedAt: new Date().toISOString(), blockedAt: new Date().toISOString() } }
+    );
+    return redirectWithError("تعداد تلاش برای این کد بیش از حد مجاز بوده است.");
+  }
+
   const user = await ensureUserIdentity(
     db,
     (await db.collection("users").findOne({ phone: { $in: buildPhoneCandidates(phone) } })) as (DbUser & { _id?: unknown }) | null,
@@ -104,7 +127,7 @@ export async function POST(request: Request) {
     id: requestId,
     userId: user.id,
     phone,
-    code: otpCode,
+    codeHash: hashOtpCode(otpCode),
     usedAt: null
   });
 
@@ -133,10 +156,7 @@ export async function POST(request: Request) {
   const response = redirectTo("/app");
 
   response.cookies.set("next-auth.session-token", token, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge
+    ...secureCookieOptions(maxAge)
   });
   response.cookies.delete(otpCookieName);
   response.cookies.delete(otpErrorCookieName);

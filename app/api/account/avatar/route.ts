@@ -41,7 +41,8 @@ export async function GET() {
     headers: {
       "Content-Type": avatar.mimeType || "image/jpeg",
       "Content-Length": String(data.length),
-      "Cache-Control": "private, max-age=60"
+      "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff"
     }
   });
 }

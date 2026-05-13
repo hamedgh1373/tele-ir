@@ -1,7 +1,6 @@
 import { randomUUID } from "crypto";
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { authOptions, ensureBootstrapAdmin } from "@/lib/auth";
 import { getDb, type AppUser } from "@/lib/chat";
@@ -9,9 +8,7 @@ import { normalizeIranPhone } from "@/lib/sms";
 
 const createUserSchema = z.object({
   name: z.string().trim().min(2).max(60),
-  email: z.string().trim().email(),
-  phone: z.string().trim().optional().default(""),
-  password: z.string().min(6).max(72),
+  phone: z.string().trim().min(1),
   role: z.enum(["admin", "user"]).default("user"),
   uploadLimitMb: z.coerce.number().int().min(1).max(1024).default(100)
 });
@@ -63,30 +60,21 @@ export async function POST(request: Request) {
   }
 
   const db = await getDb();
-  const email = parsed.data.email.toLowerCase();
-  const phone = parsed.data.phone ? normalizeIranPhone(parsed.data.phone) : "";
-  if (parsed.data.phone && !phone) {
+  const phone = normalizeIranPhone(parsed.data.phone);
+  if (!phone) {
     return NextResponse.json({ error: "شماره موبایل معتبر نیست." }, { status: 400 });
   }
-  const exists = await db.collection("users").findOne({ email });
-
-  if (exists) {
-    return NextResponse.json({ error: "این ایمیل قبلا ثبت شده است." }, { status: 409 });
-  }
-
-  if (phone) {
-    const phoneExists = await db.collection("users").findOne({ phone });
-    if (phoneExists) {
-      return NextResponse.json({ error: "این شماره قبلا ثبت شده است." }, { status: 409 });
-    }
+  const phoneExists = await db.collection("users").findOne({ phone });
+  if (phoneExists) {
+    return NextResponse.json({ error: "این شماره قبلا ثبت شده است." }, { status: 409 });
   }
 
   const user = {
     id: randomUUID(),
     name: parsed.data.name,
-    email,
-    phone: phone || undefined,
-    passwordHash: await bcrypt.hash(parsed.data.password, 12),
+    email: `${phone.replace(/\D+/g, "")}@teleir.local`,
+    phone,
+    passwordHash: randomUUID(),
     role: parsed.data.role,
     uploadLimitMb: parsed.data.uploadLimitMb,
     createdAt: new Date().toISOString(),
@@ -99,7 +87,6 @@ export async function POST(request: Request) {
     user: {
       id: user.id,
       name: user.name,
-      email: user.email,
       phone: user.phone,
       role: user.role,
       uploadLimitMb: user.uploadLimitMb,

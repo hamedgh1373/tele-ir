@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { getTeleirDb, getTeleirDbName, getTeleirLegacyDb, getTeleirLegacyDbName } from "@/lib/mongodb";
+import { hashOtpCode } from "@/lib/security";
 import { normalizeIranPhone } from "@/lib/sms";
 import { isSessionRevoked } from "@/lib/session-store";
 
@@ -90,6 +91,7 @@ async function ensureTeleirV2Indexes() {
     db.collection("user_contacts").createIndex({ ownerId: 1, phone: 1 }, { unique: true }),
     db.collection("user_sessions").createIndex({ sessionId: 1 }, { unique: true }),
     db.collection("otp_codes").createIndex({ id: 1 }, { unique: true }),
+    db.collection("otp_codes").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
     db.collection("settings").createIndex({ key: 1 }, { unique: true })
   ]);
 }
@@ -268,17 +270,13 @@ export async function ensureBootstrapAdmin() {
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
-      name: "Email login",
+      name: "OTP login",
       credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
         phone: { label: "Phone", type: "text" },
         otpCode: { label: "OTP Code", type: "text" },
         requestId: { label: "Request ID", type: "text" }
       },
       async authorize(credentials) {
-        const email = credentials?.email?.trim().toLowerCase();
-        const password = credentials?.password ?? "";
         const phone = normalizeIranPhone(credentials?.phone || "");
         const otpCode = String(credentials?.otpCode || "").trim();
         const requestId = String(credentials?.requestId || "").trim();
@@ -296,7 +294,7 @@ export const authOptions: NextAuthOptions = {
             id: requestId,
             userId: user.id,
             phone,
-            code: otpCode,
+            codeHash: hashOtpCode(otpCode),
             usedAt: null
           });
 
@@ -320,32 +318,7 @@ export const authOptions: NextAuthOptions = {
             role: user.role
           };
         }
-
-        if (!email || !password) {
-          return null;
-        }
-
-        await ensureBootstrapAdmin();
-        const user = await normalizeRuntimeUser((await db.collection("users").findOne({
-          email
-        })) as (DbUser & { _id?: unknown }) | null);
-
-        if (!user) {
-          return null;
-        }
-
-        const ok = await bcrypt.compare(password, user.passwordHash);
-
-        if (!ok) {
-          return null;
-        }
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role
-        };
+        return null;
       }
     })
   ],

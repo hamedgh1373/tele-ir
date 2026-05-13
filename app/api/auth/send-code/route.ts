@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { getTeleirDb } from "@/lib/mongodb";
+import { consumeRateLimit, getClientIpFromHeaders, hashOtpCode, secureCookieOptions } from "@/lib/security";
 import { makeOtpCode, normalizeIranPhone, sendSmsIrOtp } from "@/lib/sms";
 
 type DbUser = {
@@ -78,6 +79,7 @@ export async function POST(request: Request) {
     : Object.fromEntries((await request.formData().catch(() => new FormData())).entries());
   const phoneInput = String(body?.phone || "");
   const phone = normalizeIranPhone(phoneInput);
+  const clientIp = getClientIpFromHeaders(request.headers);
 
   if (!phone) {
     if (!wantsJson) {
@@ -87,6 +89,34 @@ export async function POST(request: Request) {
   }
 
   const db = await getTeleirDb();
+  const ipLimit = await consumeRateLimit({
+    scope: "otp-send-ip",
+    key: clientIp,
+    limit: 20,
+    windowMs: 15 * 60 * 1000
+  });
+  if (!ipLimit.ok) {
+    const message = "تعداد درخواست‌های ارسال کد زیاد شده است. چند دقیقه دیگر دوباره تلاش کنید.";
+    if (!wantsJson) {
+      return redirectTo(loginErrorPath(message));
+    }
+    return NextResponse.json({ error: message, retryAfter: ipLimit.retryAfterSec }, { status: 429 });
+  }
+
+  const phoneLimit = await consumeRateLimit({
+    scope: "otp-send-phone",
+    key: phone,
+    limit: 5,
+    windowMs: 10 * 60 * 1000
+  });
+  if (!phoneLimit.ok) {
+    const message = "برای این شماره اخیرا کد زیادی ارسال شده است. کمی بعد دوباره تلاش کنید.";
+    if (!wantsJson) {
+      return redirectTo(loginErrorPath(message));
+    }
+    return NextResponse.json({ error: message, retryAfter: phoneLimit.retryAfterSec }, { status: 429 });
+  }
+
   const digits = phone.replace(/\D+/g, "");
   const phoneCandidates = Array.from(
     new Set([
@@ -114,18 +144,25 @@ export async function POST(request: Request) {
   }
 
   const code = makeOtpCode();
+  const codeHash = hashOtpCode(code);
   const now = Date.now();
   const expiresAt = new Date(now + 2 * 60 * 1000).toISOString();
   const requestId = randomUUID();
+
+  await db.collection("otp_codes").updateMany(
+    { userId: user.id, phone, usedAt: null },
+    { $set: { usedAt: new Date(now).toISOString(), invalidatedAt: new Date(now).toISOString() } }
+  );
 
   await db.collection("otp_codes").insertOne({
     id: requestId,
     userId: user.id,
     phone,
-    code,
+    codeHash,
     createdAt: new Date(now).toISOString(),
     expiresAt,
-    usedAt: null
+    usedAt: null,
+    requestIp: clientIp
   });
 
   try {
@@ -164,12 +201,7 @@ export async function POST(request: Request) {
     response.cookies.set(
       otpCookieName,
       encodeURIComponent(JSON.stringify({ phone: phoneInput, requestId })),
-      {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        maxAge: 5 * 60
-      }
+      secureCookieOptions(5 * 60)
     );
     response.cookies.delete(otpErrorCookieName);
     return response;

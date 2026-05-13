@@ -8,6 +8,16 @@ import { writeTeleirLog } from "@/lib/logger";
 
 const DEFAULT_UPLOAD_LIMIT_MB = 100;
 const MONGODB_DOCUMENT_SAFE_LIMIT_MB = 12;
+const BLOCKED_UPLOAD_TYPES = new Set([
+  "application/javascript",
+  "application/x-httpd-php",
+  "application/x-msdownload",
+  "application/xhtml+xml",
+  "image/svg+xml",
+  "text/html",
+  "text/javascript",
+  "text/xml"
+]);
 
 function sanitizeName(name: string) {
   return name.replace(/[^\w.\-() ]+/g, "_").slice(0, 180) || "file";
@@ -69,6 +79,10 @@ export async function POST(
 
   if (uploaded.size <= 0) {
     return NextResponse.json({ error: "فایل خالی است." }, { status: 400 });
+  }
+
+  if (BLOCKED_UPLOAD_TYPES.has((uploaded.type || "").toLowerCase())) {
+    return NextResponse.json({ error: "این نوع فایل به دلایل امنیتی مجاز نیست." }, { status: 400 });
   }
 
   if (uploaded.size > maxBytes) {
