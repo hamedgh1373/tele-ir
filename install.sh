@@ -94,10 +94,8 @@ EOF
 
 write_env_file() {
   local public_origin="$1"
-  local admin_email="$2"
-  local admin_password="$3"
-  local admin_phone="$4"
-  local nextauth_secret="$5"
+  local admin_phone="$2"
+  local nextauth_secret="$3"
 
   cat > "${APP_DIR}/.env.local" <<EOF
 MONGODB_URI=mongodb://127.0.0.1:${MONGO_PORT}/${MONGO_DB}?directConnection=true
@@ -105,8 +103,6 @@ TELEIR_DB_NAME=${MONGO_DB_V2}
 TELEIR_LEGACY_DB_NAME=${MONGO_DB}
 NEXTAUTH_URL=${public_origin}
 NEXTAUTH_SECRET=${nextauth_secret}
-ADMIN_EMAIL=${admin_email}
-ADMIN_PASSWORD=${admin_password}
 ADMIN_PHONE=${admin_phone}
 EOF
 
@@ -266,8 +262,6 @@ main() {
     exit 1
   fi
 
-  prompt ADMIN_EMAIL_INPUT "Admin email" "admin@teleir.local"
-  prompt ADMIN_PASSWORD_INPUT "Admin password" "$(openssl rand -base64 18 | tr -d '\n' | cut -c1-20)" "1"
   prompt ADMIN_PHONE_INPUT "Admin phone number" "09123456789"
   prompt CONFIGURE_SMS_INPUT "Configure SMS.ir now? (yes/no)" "yes"
   SMS_API_KEY_INPUT=""
@@ -308,7 +302,7 @@ main() {
   install_mongodb
   ensure_user
   deploy_project_files
-  write_env_file "$public_origin" "$ADMIN_EMAIL_INPUT" "$ADMIN_PASSWORD_INPUT" "$ADMIN_PHONE_INPUT" "$nextauth_secret"
+  write_env_file "$public_origin" "$ADMIN_PHONE_INPUT" "$nextauth_secret"
   install_dependencies_and_build
   configure_sms_settings "$SMS_API_KEY_INPUT" "$SMS_LINE_NUMBER_INPUT" "$SMS_TEMPLATE_ID_INPUT" "$SMS_TEMPLATE_VARIABLE_INPUT"
   write_service_file
@@ -322,7 +316,6 @@ main() {
   echo
   echo "Tele IR installation completed."
   echo "Open: ${public_origin}/login"
-  echo "Admin email: ${ADMIN_EMAIL_INPUT}"
   echo "Admin phone: ${ADMIN_PHONE_INPUT}"
   echo
   if [[ -n "$SMS_API_KEY_INPUT" ]]; then

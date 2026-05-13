@@ -46,8 +46,6 @@ The installer will ask for:
 
 - Install mode: `ip` or `domain`
 - Server IP or domain name
-- Admin email
-- Admin password
 - Admin phone number
 - SMS.ir API key
 - SMS.ir template or line-number mode
@@ -182,8 +180,7 @@ Important values:
 - `TELEIR_LEGACY_DB_NAME`
 - `NEXTAUTH_URL`
 - `NEXTAUTH_SECRET`
-- `ADMIN_EMAIL`
-- `ADMIN_PASSWORD`
+- `ADMIN_PHONE`
 
 ### Manual Production Commands
 
@@ -262,8 +259,6 @@ sudo bash install.sh
 
 - حالت نصب: `ip` یا `domain`
 - آی‌پی سرور یا نام دامنه
-- ایمیل ادمین
-- رمز عبور ادمین
 - شماره موبایل ادمین
 - کلید API سرویس SMS.ir
 - حالت قالب تاییدی یا خط خدماتی/شماره ارسال
