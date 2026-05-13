@@ -227,6 +227,29 @@ install_dependencies_and_build() {
   su -s /bin/bash -c "cd '${APP_DIR}' && pnpm install && pnpm build" "${APP_USER}"
 }
 
+configure_sms_settings() {
+  local api_key="$1"
+  local line_number="$2"
+  local template_id="$3"
+  local template_variable="$4"
+
+  if [[ -z "$api_key" ]]; then
+    return 0
+  fi
+
+  local cmd=(bash "${APP_DIR}/configure-sms.sh" --enable --api-key "$api_key" --non-interactive)
+  if [[ -n "$template_id" ]]; then
+    cmd+=(--template-id "$template_id" --template-variable "$template_variable")
+  else
+    cmd+=(--line-number "$line_number")
+  fi
+
+  (
+    cd "$APP_DIR"
+    "${cmd[@]}"
+  )
+}
+
 start_services() {
   systemctl enable --now mongod
   systemctl restart "${APP_NAME}.service"
@@ -246,6 +269,21 @@ main() {
   prompt ADMIN_EMAIL_INPUT "Admin email" "admin@teleir.local"
   prompt ADMIN_PASSWORD_INPUT "Admin password" "$(openssl rand -base64 18 | tr -d '\n' | cut -c1-20)" "1"
   prompt ADMIN_PHONE_INPUT "Admin phone number" "09123456789"
+  prompt CONFIGURE_SMS_INPUT "Configure SMS.ir now? (yes/no)" "yes"
+  SMS_API_KEY_INPUT=""
+  SMS_LINE_NUMBER_INPUT=""
+  SMS_TEMPLATE_ID_INPUT=""
+  SMS_TEMPLATE_VARIABLE_INPUT="OTP"
+  if [[ "$CONFIGURE_SMS_INPUT" == "yes" ]]; then
+    prompt SMS_API_KEY_INPUT "SMS.ir API key" "" "1"
+    prompt SMS_USE_TEMPLATE_INPUT "Use SMS.ir verify template? (yes/no)" "yes"
+    if [[ "$SMS_USE_TEMPLATE_INPUT" == "yes" ]]; then
+      prompt SMS_TEMPLATE_ID_INPUT "SMS.ir template ID" ""
+      prompt SMS_TEMPLATE_VARIABLE_INPUT "SMS.ir template variable name" "OTP"
+    else
+      prompt SMS_LINE_NUMBER_INPUT "SMS.ir line number" ""
+    fi
+  fi
   prompt ENABLE_SSL "Enable SSL with Let's Encrypt? (yes/no)" "no"
   SSL_EMAIL=""
   if [[ "$ENABLE_SSL" == "yes" ]]; then
@@ -272,6 +310,7 @@ main() {
   deploy_project_files
   write_env_file "$public_origin" "$ADMIN_EMAIL_INPUT" "$ADMIN_PASSWORD_INPUT" "$ADMIN_PHONE_INPUT" "$nextauth_secret"
   install_dependencies_and_build
+  configure_sms_settings "$SMS_API_KEY_INPUT" "$SMS_LINE_NUMBER_INPUT" "$SMS_TEMPLATE_ID_INPUT" "$SMS_TEMPLATE_VARIABLE_INPUT"
   write_service_file
   write_nginx_http_config "$server_names"
   start_services
@@ -285,6 +324,19 @@ main() {
   echo "Open: ${public_origin}/login"
   echo "Admin email: ${ADMIN_EMAIL_INPUT}"
   echo "Admin phone: ${ADMIN_PHONE_INPUT}"
+  echo
+  if [[ -n "$SMS_API_KEY_INPUT" ]]; then
+    echo "SMS login configured."
+    if [[ -n "$SMS_TEMPLATE_ID_INPUT" ]]; then
+      echo "SMS.ir template placeholder: #${SMS_TEMPLATE_VARIABLE_INPUT^^}#"
+    fi
+  else
+    echo -e "\e[31mWARNING: SMS login is not configured.\e[0m"
+    echo -e "\e[31mTele IR only supports phone-based SMS login. Users cannot sign in until SMS.ir is configured.\e[0m"
+    echo "To configure it later:"
+    echo "  cd ${APP_DIR}"
+    echo "  sudo bash configure-sms.sh"
+  fi
 }
 
 main "$@"
