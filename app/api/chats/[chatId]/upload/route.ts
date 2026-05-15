@@ -59,7 +59,7 @@ export async function POST(
 
   if (chat.type === "channel" && !chat.adminIds?.includes(session.user.id)) {
     return NextResponse.json(
-      { error: "فقط سازنده کانال فعلا می‌تواند فایل ارسال کند." },
+      { error: "فقط ادمین‌های کانال می‌توانند فایل ارسال کنند." },
       { status: 403 }
     );
   }

@@ -39,12 +39,19 @@ export async function GET(
     : [];
   return NextResponse.json({
     chat,
+    isCreator: chat.createdByUserId === session.user.id,
+    canManageAvatar:
+      (chat.type === "group" || chat.type === "channel") &&
+      (chat.adminIds?.includes(session.user.id) || false),
+    canPromoteAdmins: chat.createdByUserId === session.user.id,
+    canAddMembers: chat.adminIds?.includes(session.user.id) || false,
     members: users.map((user) => ({
       id: user.id,
       name: user.name,
       email: user.email,
       phone: user.phone || "",
       isAdmin: chat.adminIds?.includes(user.id) || false,
+      isCreator: chat.createdByUserId === user.id,
     })),
     media: media.map((m) => ({
       id: m.id,

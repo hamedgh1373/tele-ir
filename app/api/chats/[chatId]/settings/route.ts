@@ -17,6 +17,7 @@ const schema = z.object({
     "rename",
     "clearHistory",
     "leave",
+    "deleteChat",
   ]),
   messageId: z.string().trim().optional(),
   title: z.string().trim().min(1).max(80).optional(),
@@ -153,6 +154,19 @@ export async function PATCH(
         $pull: { participantIds: session.user.id, adminIds: session.user.id },
         $set: { updatedAt: now },
       } as any);
+  }
+  if (action === "deleteChat") {
+    if (chat.createdByUserId !== session.user.id) {
+      return NextResponse.json({ error: "فقط سازنده می‌تواند گروه یا کانال را حذف کند." }, { status: 403 });
+    }
+    const messages = await db.collection("messages").find({ chatId }, { projection: { "attachment.fileId": 1 } }).toArray();
+    const fileIds = messages.map((message: any) => message.attachment?.fileId).filter(Boolean);
+    if (fileIds.length) {
+      await db.collection("files").deleteMany({ id: { $in: fileIds } });
+    }
+    await db.collection("messages").deleteMany({ chatId });
+    await db.collection("chats").deleteOne({ id: chatId });
+    return NextResponse.json({ ok: true, deleted: true });
   }
   const updated = await db.collection("chats").findOne({ id: chatId });
   return NextResponse.json({ ok: true, chat: updated });

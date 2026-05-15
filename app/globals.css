@@ -330,6 +330,8 @@ button {
 
 .telegram-menu-details {
   position: relative;
+  display: inline-block;
+  width: max-content;
 }
 
 .telegram-menu-details summary {
@@ -363,7 +365,8 @@ button {
 .telegram-menu {
   position: absolute;
   top: 52px;
-  right: 10px;
+  left: 0;
+  right: auto;
   width: 292px;
   padding: 0.45rem;
   background: var(--panel);
@@ -373,6 +376,15 @@ button {
   display: grid;
   gap: 0.12rem;
   z-index: 20;
+}
+
+[dir="rtl"] .telegram-menu {
+  left: auto;
+  right: 0;
+}
+
+.telegram-menu[hidden] {
+  display: none;
 }
 
 .telegram-menu-profile {
@@ -411,7 +423,7 @@ button {
   background: transparent;
   color: var(--text);
   padding: 0 0.85rem;
-  text-align: right;
+  text-align: start;
 }
 
 .telegram-menu button:disabled {
@@ -1100,9 +1112,14 @@ button {
 }
 
 .send-btn span {
-  transform: rotate(180deg);
+  transform: none;
   display: inline-block;
   font-size: 1.15rem;
+}
+
+[dir="rtl"] .send-btn span,
+.send-btn[data-dir="rtl"] span {
+  transform: rotate(180deg);
 }
 
 .send-btn:disabled {
@@ -2119,7 +2136,7 @@ button {
 .chat-actions-popover {
   position: fixed;
   top: 64px;
-  left: 1rem;
+  inset-inline-end: 1rem;
   z-index: 85;
   width: 230px;
   display: grid;
@@ -2140,7 +2157,7 @@ button {
   background: transparent;
   color: var(--text);
   padding: 0 0.75rem;
-  text-align: right;
+  text-align: start;
 }
 
 .chat-actions-popover button:hover,
@@ -2947,11 +2964,13 @@ button {
     place-items: center;
   }
 
+  .chat-head-actions .search-toggle-btn::before,
   .chat-head-actions button[title="Search"]::before {
     content: "⌕";
     font-size: 1.05rem;
   }
 
+  .chat-head-actions .more-toggle-btn::before,
   .chat-head-actions button[title="More"]::before {
     content: "⋮";
     font-size: 1.35rem;
@@ -3509,19 +3528,23 @@ button {
     padding-bottom: calc(0.48rem + env(safe-area-inset-bottom)) !important;
   }
 
+  .chat-head-actions .search-toggle-btn,
   .chat-head-actions button[title="Search"] {
     font-size: 0 !important;
   }
 
+  .chat-head-actions .search-toggle-btn::before,
   .chat-head-actions button[title="Search"]::before {
     content: "⌕" !important;
     font-size: 1.15rem !important;
   }
 
+  .chat-head-actions .more-toggle-btn,
   .chat-head-actions button[title="More"] {
     font-size: 0 !important;
   }
 
+  .chat-head-actions .more-toggle-btn::before,
   .chat-head-actions button[title="More"]::before {
     content: "⋮" !important;
     font-size: 1.4rem !important;

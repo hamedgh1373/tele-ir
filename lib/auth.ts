@@ -52,7 +52,7 @@ async function normalizeRuntimeUser(user: (DbUser & { _id?: unknown }) | null) {
     user.email = fallbackEmail;
   }
   if (!user.name) {
-    updates.name = user.email || user.phone || "Teleir User";
+    updates.name = user.email || user.phone || "Kaman User";
     user.name = updates.name as string;
   }
   if (!user.role) {
@@ -156,7 +156,7 @@ async function ensureDefaultSettings(actor: string) {
       $setOnInsert: {
         key: "app",
         value: {
-          name: "Teleir",
+          name: "Kaman",
           database: getTeleirDbName(),
           legacyDatabaseSkipped: getTeleirLegacyDbName(),
           defaultUploadLimitMb: 100,
@@ -253,7 +253,7 @@ export async function ensureBootstrapAdmin() {
     id: randomUUID(),
     email: email || (adminPhone ? `${adminPhone.replace(/\D+/g, "")}@teleir.local` : `admin-${randomUUID()}@teleir.local`),
     phone: adminPhone || undefined,
-    name: "Teleir Admin",
+    name: "Kaman Admin",
     passwordHash: await bcrypt.hash(password || randomUUID(), 12),
     role: "admin" as const,
     uploadLimitMb: 1024,

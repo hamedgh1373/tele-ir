@@ -1,3 +1,7 @@
+"use client";
+
+import { useI18n } from "@/components/i18n-provider";
+
 type BrandMarkProps = {
   size?: "sm" | "md" | "lg";
   withText?: boolean;
@@ -12,14 +16,15 @@ export function BrandMark({
   const classes = ["brand-mark", `brand-mark-${size}`, className]
     .filter(Boolean)
     .join(" ");
+  const { t } = useI18n();
 
   return (
     <div className={classes}>
       <img src="/favicon.ico" alt="" aria-hidden="true" />
       {withText ? (
         <div className="brand-mark-text">
-          <strong>Teleir</strong>
-          <span>Private Messenger</span>
+          <strong>{t("brandName")}</strong>
+          <span>{t("brandTagline")}</span>
         </div>
       ) : null}
     </div>

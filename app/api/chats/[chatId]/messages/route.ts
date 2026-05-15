@@ -135,7 +135,7 @@ export async function POST(
 
   if (chat.type === "channel" && !chat.adminIds?.includes(session.user.id)) {
     return NextResponse.json(
-      { error: "فقط سازنده کانال فعلا می‌تواند پیام ارسال کند." },
+      { error: "فقط ادمین‌های کانال می‌توانند پیام ارسال کنند." },
       { status: 403 }
     );
   }

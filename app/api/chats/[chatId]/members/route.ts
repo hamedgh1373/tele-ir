@@ -5,7 +5,8 @@ import { authOptions } from "@/lib/auth";
 import { getDb, getUsersByEmails } from "@/lib/chat";
 
 const memberSchema = z.object({
-  emails: z.array(z.string().trim().email()).min(1).max(100)
+  emails: z.array(z.string().trim().email()).max(100).optional(),
+  memberIds: z.array(z.string().trim().min(1)).max(100).optional()
 });
 
 export async function POST(
@@ -45,22 +46,47 @@ export async function POST(
 
   if (!chat.adminIds?.includes(session.user.id)) {
     return NextResponse.json(
-      { error: "فقط سازنده گروه یا کانال فعلا می‌تواند عضو اضافه کند." },
+      { error: "فقط ادمین‌های گروه یا کانال می‌توانند عضو اضافه کنند." },
       { status: 403 }
     );
   }
 
-  const emails = Array.from(new Set(parsed.data.emails.map((email) => email.toLowerCase())));
-  const users = await getUsersByEmails(emails);
+  const emails = Array.from(new Set((parsed.data.emails || []).map((email) => email.toLowerCase())));
+  const memberIds = Array.from(new Set((parsed.data.memberIds || []).map(String)));
+  if (emails.length === 0 && memberIds.length === 0) {
+    return NextResponse.json(
+      { error: "حداقل یک عضو انتخاب کنید." },
+      { status: 400 }
+    );
+  }
 
-  if (users.length !== emails.length) {
-    const found = new Set(users.map((user) => user.email));
+  const usersByEmail = await getUsersByEmails(emails);
+  if (usersByEmail.length !== emails.length) {
+    const found = new Set(usersByEmail.map((user) => user.email));
     const missing = emails.filter((email) => !found.has(email));
     return NextResponse.json(
       { error: `این ایمیل‌ها پیدا نشدند: ${missing.join(", ")}` },
       { status: 404 }
     );
   }
+
+  const usersById = memberIds.length
+    ? await db.collection("users").find({ id: { $in: memberIds } }).toArray()
+    : [];
+  if (usersById.length !== memberIds.length) {
+    const found = new Set(usersById.map((user: any) => String(user.id)));
+    const missing = memberIds.filter((id) => !found.has(id));
+    return NextResponse.json(
+      { error: `این کاربران پیدا نشدند: ${missing.join(", ")}` },
+      { status: 404 }
+    );
+  }
+
+  const users = Array.from(
+    new Map(
+      [...usersByEmail, ...usersById].map((user: any) => [String(user.id), user])
+    ).values()
+  );
 
   const nextParticipantIds = Array.from(
     new Set([...(chat.participantIds || []), ...users.map((user) => user.id)])
@@ -78,7 +104,7 @@ export async function POST(
     {
       $addToSet: {
         participantIds: {
-          $each: users.map((user) => user.id)
+          $each: users.map((user: any) => String(user.id))
         }
       },
       $set: {

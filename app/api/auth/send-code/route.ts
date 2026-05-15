@@ -201,7 +201,7 @@ export async function POST(request: Request) {
     response.cookies.set(
       otpCookieName,
       encodeURIComponent(JSON.stringify({ phone: phoneInput, requestId })),
-      secureCookieOptions(5 * 60)
+      secureCookieOptions(5 * 60, request)
     );
     response.cookies.delete(otpErrorCookieName);
     return response;

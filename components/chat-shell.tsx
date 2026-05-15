@@ -13,12 +13,13 @@ import {
   useState,
 } from "react";
 import { signOut } from "next-auth/react";
-import { BrandMark } from "@/components/brand-mark";
+import { useI18n } from "@/components/i18n-provider";
 
 type CurrentUser = {
   id: string;
   name: string;
   email: string;
+  phone?: string;
   role: "admin" | "user";
   avatarUrl?: string;
 };
@@ -27,6 +28,7 @@ export type ChatItem = {
   id: string;
   type: "direct" | "group" | "channel" | "saved";
   title: string;
+  createdByUserId?: string;
   subtitle?: string;
   lastMessageText?: string;
   lastMessageAt?: string;
@@ -123,12 +125,13 @@ async function logClientIssue(message: string, data?: Record<string, unknown>) {
 
 function formatChatTime(
   value?: string,
+  localeTag = "fa-IR",
   mode: "time" | "dateTime" = "dateTime",
 ) {
   if (!value) {
     return "";
   }
-  return new Intl.DateTimeFormat("fa-IR", {
+  return new Intl.DateTimeFormat(localeTag, {
     ...(mode === "time"
       ? { hour: "2-digit", minute: "2-digit" }
       : { dateStyle: "short", timeStyle: "short" }),
@@ -175,6 +178,24 @@ export function ChatShell({
   initialContacts?: ContactMatch[];
   initialContactsOpen?: boolean;
 }) {
+  const { t, localeTag, dir } = useI18n();
+  const getChatTitle = (chat?: Pick<ChatItem, "type" | "title"> | null) =>
+    chat?.type === "saved" ? t("savedMessages") : chat?.title || t("untitled");
+
+  const getChatTypeLabel = (type?: ChatItem["type"]) => {
+    switch (type) {
+      case "direct":
+        return t("direct");
+      case "group":
+        return t("group");
+      case "channel":
+        return t("channel");
+      case "saved":
+        return t("savedMessages");
+      default:
+        return t("untitled");
+    }
+  };
   const [chats, setChats] = useState<ChatItem[]>(initialChats);
   const [activeChatId, setActiveChatId] = useState<string>(initialActiveChatId);
   const activeChatIdRef = useRef<string>(initialActiveChatId);
@@ -186,11 +207,11 @@ export function ChatShell({
   const [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResults>({ chats: [], contacts: [], messages: [] });
   const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
   const [newTitle, setNewTitle] = useState("");
-  const [memberEmails, setMemberEmails] = useState("");
-  const [chatType, setChatType] = useState<"direct" | "group" | "channel">(
-    "direct",
+  const [chatType, setChatType] = useState<"group" | "channel">(
+    "group",
   );
   const [status, setStatus] = useState("");
+  const [currentUserSummary, setCurrentUserSummary] = useState<CurrentUser>(currentUser);
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobilePane, setMobilePane] = useState<"list" | "chat">(
     initialActiveChatId ? "chat" : "list",
@@ -215,6 +236,9 @@ export function ChatShell({
   const [hideForwardSender, setHideForwardSender] = useState(false);
   const [chatProfileOpen, setChatProfileOpen] = useState(false);
   const [chatProfile, setChatProfile] = useState<any>(null);
+  const [profileSelectedMemberIds, setProfileSelectedMemberIds] = useState<string[]>([]);
+  const [profileMemberPickerOpen, setProfileMemberPickerOpen] = useState(false);
+  const [chatAvatarBusy, setChatAvatarBusy] = useState(false);
   const [chatActionsOpen, setChatActionsOpen] = useState(false);
   const [activeFolder, setActiveFolder] = useState<
     "all" | "direct" | "group" | "channel" | "archived"
@@ -255,6 +279,11 @@ export function ChatShell({
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messageRefs = useRef<Record<string, HTMLElement | null>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const chatAvatarInputRef = useRef<HTMLInputElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const chatActionsRef = useRef<HTMLDivElement | null>(null);
+  const chatActionsButtonRef = useRef<HTMLButtonElement | null>(null);
   const pullStartYRef = useRef<number | null>(null);
   const pullDistanceRef = useRef(0);
   const pullTargetRef = useRef<"" | "list" | "chat">("");
@@ -316,7 +345,7 @@ export function ChatShell({
     const typing = Object.entries(presence).filter(
       ([, value]) => value.typingInChatId === activeChatId && value.isOnline,
     );
-    return typing.length ? "typing..." : "";
+    return typing.length ? t("typing") : "";
   }, [activeChatId, presence]);
 
   const searchMatches = useMemo(() => {
@@ -347,7 +376,7 @@ export function ChatShell({
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      setStatus(data.error || "خطا در دریافت گفتگوها");
+      setStatus(t("loadChatsFailed"));
       return;
     }
 
@@ -436,7 +465,7 @@ export function ChatShell({
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStatus(data.error || "عملیات گفتگو انجام نشد.");
+      setStatus(t("chatOperationFailed"));
       return;
     }
     setChatContextMenu(null);
@@ -471,7 +500,7 @@ export function ChatShell({
     const data = await response.json();
 
     if (!response.ok) {
-      setStatus(data.error || "خطا در دریافت پیام‌ها");
+      setStatus(t("loadMessagesFailed"));
       return;
     }
 
@@ -496,7 +525,7 @@ export function ChatShell({
     const response = await fetch("/api/contacts", { cache: "no-store" });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStatus(data.error || "خطا در دریافت مخاطبین");
+      setStatus(t("loadContactsFailed"));
       return;
     }
     setContacts((data.contacts || []) as ContactMatch[]);
@@ -540,7 +569,7 @@ export function ChatShell({
       });
       const data = await response.json();
       if (!response.ok) {
-        setStatus(data.error || "خطا در ذخیره مخاطبین");
+        setStatus(t("saveContactsFailed"));
         return;
       }
       await loadContacts();
@@ -571,7 +600,7 @@ export function ChatShell({
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStatus(data.error || "این کاربر وجود ندارد.");
+      setStatus(t("userNotFound"));
       return;
     }
     setManualContactPhone("");
@@ -633,7 +662,7 @@ export function ChatShell({
         await loadChats(activeChatId);
         await loadMessages(activeChatId);
       }
-      setStatus("به‌روزرسانی شد.");
+      setStatus(t("refreshDone"));
     } finally {
       setRefreshingPane("");
     }
@@ -745,9 +774,48 @@ export function ChatShell({
   }, [activeSearchResult, searchMatches]);
 
   useEffect(() => {
+    setCurrentUserSummary(currentUser);
+  }, [currentUser]);
+
+  useEffect(() => {
+    async function loadCurrentUserSummary() {
+      const response = await fetch("/api/account/profile", { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.user) {
+        return;
+      }
+
+      setCurrentUserSummary((current) => ({
+        ...current,
+        name: data.user.name || current.name,
+        email: data.user.email || current.email,
+        phone: data.user.phone || current.phone,
+        avatarUrl: data.user.avatar
+          ? `/api/account/avatar?t=${data.user.avatar.updatedAt || Date.now()}`
+          : undefined
+      }));
+    }
+
+    void loadCurrentUserSummary();
+    window.addEventListener("kaman-profile-updated", loadCurrentUserSummary);
+    window.addEventListener("focus", loadCurrentUserSummary);
+    return () => {
+      window.removeEventListener("kaman-profile-updated", loadCurrentUserSummary);
+      window.removeEventListener("focus", loadCurrentUserSummary);
+    };
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     setPasscodeLocked(localStorage.getItem("teleir-passcode-enabled") === "1");
   }, []);
+
+  useEffect(() => {
+    setMenuOpen(false);
+    setChatActionsOpen(false);
+    setChatContextMenu(null);
+    setMessageMenu(null);
+  }, [localeTag]);
 
   useEffect(() => {
     if (typeof EventSource === "undefined") return;
@@ -780,8 +848,8 @@ export function ChatShell({
               ) {
                 setToast({
                   id: `${chat.id}-${Date.now()}`,
-                  title: chat.title || "پیام جدید",
-                  body: chat.lastMessageText || "پیام جدید",
+                  title: getChatTitle(chat) || t("newMessage"),
+                  body: chat.lastMessageText || t("newMessage"),
                   chatId: chat.id,
                 });
               }
@@ -889,23 +957,41 @@ export function ChatShell({
     };
   }, []);
 
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as Node | null;
+
+      if (
+        menuOpen &&
+        target &&
+        !menuRef.current?.contains(target) &&
+        !menuButtonRef.current?.contains(target)
+      ) {
+        setMenuOpen(false);
+      }
+
+      if (
+        chatActionsOpen &&
+        target &&
+        !chatActionsRef.current?.contains(target) &&
+        !chatActionsButtonRef.current?.contains(target)
+      ) {
+        setChatActionsOpen(false);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [chatActionsOpen, menuOpen]);
+
   async function handleCreateChat(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("");
-    const selectedContacts = contacts.filter((item) =>
-      selectedMemberUserIds.includes(item.userId),
-    );
-    const payload =
-      chatType === "direct"
-        ? { type: "direct", email: query }
-        : {
-          type: chatType,
-          title: newTitle,
-          memberEmails: selectedContacts
-            .map((item) => item.email)
-            .filter(Boolean),
-          memberIds: selectedMemberUserIds,
-        };
+    const payload = {
+      type: chatType,
+      title: newTitle,
+      memberIds: selectedMemberUserIds,
+    };
 
     const response = await fetch("/api/chats", {
       method: "POST",
@@ -915,15 +1001,13 @@ export function ChatShell({
     const data = await response.json();
 
     if (!response.ok) {
-      setStatus(data.error || "خطا در ساخت گفتگو");
+      setStatus(t("createChatFailed"));
       return;
     }
 
-    setQuery("");
     setNewTitle("");
-    setMemberEmails("");
     setSelectedMemberUserIds([]);
-    setStatus("گفتگو ساخته شد.");
+    setStatus(t("chatCreated"));
     await loadChats(data.chat.id);
   }
 
@@ -943,7 +1027,7 @@ export function ChatShell({
     const data = await response.json();
 
     if (!response.ok) {
-      setStatus(data.error || "خطا در ساخت گفتگو");
+      setStatus(t("createChatFailed"));
       return;
     }
 
@@ -959,7 +1043,7 @@ export function ChatShell({
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStatus(data.error || "خطا در بازکردن Saved Messages");
+      setStatus(t("openSavedMessagesFailed"));
       return;
     }
     await loadChats(data.chat.id);
@@ -1006,7 +1090,7 @@ export function ChatShell({
       }
 
       if (!canPostInActiveChat) {
-        setStatus("در این کانال فقط مدیر می‌تواند پیام ارسال کند.");
+        setStatus(t("onlyAdminsCanPost"));
         activeChatIdRef.current = chatId;
         setActiveChatId(chatId);
         setMobilePane("chat");
@@ -1088,7 +1172,7 @@ export function ChatShell({
           error: data?.error || null,
           body: data || null,
         });
-        setStatus(data?.error || "خطا در ارسال پیام. لاگ ثبت شد.");
+        setStatus(t("sendMessageFailed"));
         setMessages((currentMessages) =>
           currentMessages.filter((message) => message.id !== optimisticId),
         );
@@ -1118,7 +1202,7 @@ export function ChatShell({
         chatId,
         error: error instanceof Error ? error.message : String(error),
       });
-      setStatus("ارتباط با سرور برقرار نشد. لاگ ثبت شد.");
+      setStatus(t("serverConnectionFailed"));
       setComposer(text);
       activeChatIdRef.current = chatId;
       setActiveChatId(chatId);
@@ -1128,8 +1212,8 @@ export function ChatShell({
     }
   }
 
-  async function addMembers() {
-    if (!activeChatId || !memberEmails.trim()) {
+  async function addMembers(memberIds: string[]) {
+    if (!activeChatId || memberIds.length === 0) {
       return;
     }
 
@@ -1137,22 +1221,21 @@ export function ChatShell({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        emails: memberEmails
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
+        memberIds,
       }),
     });
     const data = await response.json();
 
     if (!response.ok) {
-      setStatus(data.error || "خطا در افزودن اعضا");
+      setStatus(t("addMembersFailed"));
       return;
     }
 
-    setStatus("اعضا اضافه شدند.");
-    setMemberEmails("");
+    setStatus(t("membersAdded"));
+    setProfileSelectedMemberIds([]);
+    setProfileMemberPickerOpen(false);
     await loadChats(activeChatId);
+    await loadChatProfile();
   }
 
   async function handleFileSelect(event: ChangeEvent<HTMLInputElement>) {
@@ -1171,7 +1254,7 @@ export function ChatShell({
       return;
     }
     if (!canPostInActiveChat) {
-      setStatus("در این کانال فقط مدیر می‌تواند فایل ارسال کند.");
+      setStatus(t("onlyAdminsCanUpload"));
       return;
     }
 
@@ -1198,7 +1281,7 @@ export function ChatShell({
             size: file.size,
             error: error instanceof Error ? error.message : String(error),
           });
-          setStatus("ارتباط با سرور هنگام آپلود برقرار نشد. لاگ ثبت شد.");
+          setStatus(t("uploadConnectionFailed"));
           return;
         }
         if (!response.ok) {
@@ -1209,7 +1292,7 @@ export function ChatShell({
             size: file.size,
             error: data.error || null,
           });
-          setStatus(data.error || "خطا در آپلود فایل");
+          setStatus(t("uploadFailed"));
           return;
         }
         setMessages((currentMessages) =>
@@ -1269,7 +1352,7 @@ export function ChatShell({
     );
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStatus(data.error || "خطا در ویرایش پیام");
+      setStatus(t("editMessageFailed"));
       return;
     }
 
@@ -1287,7 +1370,7 @@ export function ChatShell({
     if (!activeChatId) {
       return;
     }
-    const sure = window.confirm("این پیام حذف شود؟");
+    const sure = window.confirm(t("deleteMessageConfirm"));
     if (!sure) {
       return;
     }
@@ -1300,7 +1383,7 @@ export function ChatShell({
     );
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStatus(data.error || "خطا در حذف پیام");
+      setStatus(t("deleteMessageFailed"));
       return;
     }
 
@@ -1326,7 +1409,7 @@ export function ChatShell({
     );
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStatus(data.error || "خطا در حذف پیام برای شما");
+      setStatus(t("deleteForMeFailed"));
       return;
     }
 
@@ -1341,14 +1424,14 @@ export function ChatShell({
     const textToCopy = (message.text || "").trim();
 
     if (!textToCopy) {
-      setStatus("برای فایل و تصویر از گزینه Download استفاده کنید.");
+      setStatus(t("useDownloadForFiles"));
       return;
     }
 
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(textToCopy);
-        setStatus("متن کپی شد.");
+        setStatus(t("copiedText"));
         return;
       }
     } catch (error) {
@@ -1365,7 +1448,7 @@ export function ChatShell({
     textarea.select();
     const ok = document.execCommand("copy");
     textarea.remove();
-    setStatus(ok ? "متن کپی شد." : "کپی متن در این مرورگر مجاز نیست.");
+    setStatus(ok ? t("copiedText") : t("copyNotAllowed"));
   }
 
   async function forwardMessage(targetChatId: string) {
@@ -1523,7 +1606,8 @@ export function ChatShell({
       | "pinChat"
       | "unpinChat"
       | "clearHistory"
-      | "leave",
+      | "leave"
+      | "deleteChat",
     messageId?: string,
   ) {
     if (!activeChatId) return;
@@ -1535,10 +1619,18 @@ export function ChatShell({
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStatus(data.error || "عملیات انجام نشد.");
+      setStatus(t("operationFailed"));
       return;
     }
     setChatActionsOpen(false);
+    if (action === "deleteChat") {
+      setChatProfileOpen(false);
+      setActiveChatId("");
+      setMessages([]);
+      setMobilePane("list");
+      await loadChats();
+      return;
+    }
     await loadChats(activeChatId);
     if (action === "pin" || action === "unpin") await loadMessages(activeChatId);
     if (action === "clearHistory") setMessages([]);
@@ -1555,10 +1647,12 @@ export function ChatShell({
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStatus(data.error || "خطا در دریافت پروفایل گفتگو");
+      setStatus(t("loadChatProfileFailed"));
       return;
     }
     setChatProfile(data);
+    setProfileMemberPickerOpen(false);
+    setProfileSelectedMemberIds([]);
     setChatProfileOpen(true);
   }
 
@@ -1577,11 +1671,49 @@ export function ChatShell({
     );
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStatus(data.error || "عملیات مدیریت عضو انجام نشد.");
+      setStatus(t("manageMemberFailed"));
       return;
     }
     await loadChatProfile();
     await loadChats(activeChatId);
+  }
+
+  async function uploadChatAvatar(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file || !activeChatId) return;
+    setChatAvatarBusy(true);
+    setStatus("");
+    const formData = new FormData();
+    formData.append("avatar", file);
+    const response = await fetch(`/api/chats/${activeChatId}/avatar`, {
+      method: "POST",
+      body: formData,
+    });
+    const data = await response.json().catch(() => ({}));
+    setChatAvatarBusy(false);
+    if (!response.ok) {
+      setStatus(data.error || t("operationFailed"));
+      return;
+    }
+    await loadChats(activeChatId);
+    await loadChatProfile();
+  }
+
+  async function deleteChatAvatar() {
+    if (!activeChatId) return;
+    setChatAvatarBusy(true);
+    setStatus("");
+    const response = await fetch(`/api/chats/${activeChatId}/avatar`, {
+      method: "DELETE",
+    });
+    const data = await response.json().catch(() => ({}));
+    setChatAvatarBusy(false);
+    if (!response.ok) {
+      setStatus(data.error || t("operationFailed"));
+      return;
+    }
+    await loadChats(activeChatId);
+    await loadChatProfile();
   }
 
 
@@ -1605,7 +1737,7 @@ export function ChatShell({
     );
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStatus(data.error || "خطا در حذف پیام‌ها");
+      setStatus(t("deleteSelectedMessagesFailed"));
       return;
     }
     setMessages((current) =>
@@ -1628,11 +1760,11 @@ export function ChatShell({
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data.error || "ساخت گفتگوی مقصد انجام نشد.");
+        throw new Error(t("createTargetChatFailed"));
       }
       return data.chat.id as string;
     }
-    throw new Error("مقصد فوروارد نامعتبر است.");
+    throw new Error(t("invalidForwardTarget"));
   }
 
   async function forwardSelectedMessagesToTarget(targetChatId: string) {
@@ -1655,14 +1787,14 @@ export function ChatShell({
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data.error || "خطا در فوروارد پیام");
+      throw new Error(t("forwardFailed"));
     }
     return data;
   }
 
   async function submitForwardSelectedMessages() {
     if (forwardTargetIds.length === 0) {
-      setStatus("حداقل یک مقصد برای فوروارد انتخاب کنید.");
+      setStatus(t("chooseAtLeastOneForwardTarget"));
       return;
     }
     setStatus("");
@@ -1683,7 +1815,7 @@ export function ChatShell({
         setMobilePane("chat");
       }
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "خطا در فوروارد پیام");
+      setStatus(error instanceof Error ? error.message : t("forwardFailed"));
     }
   }
 
@@ -1698,7 +1830,7 @@ export function ChatShell({
       setActiveChatId(targetChatId);
       setMobilePane("chat");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "خطا در فوروارد پیام");
+      setStatus(error instanceof Error ? error.message : t("forwardFailed"));
     }
   }
 
@@ -1721,7 +1853,7 @@ export function ChatShell({
       setPasscodeLocked(false);
       return;
     }
-    const entered = window.prompt("Passcode");
+    const entered = window.prompt(t("passcodePrompt"));
     if (entered === expected) setPasscodeLocked(false);
   }
 
@@ -1736,22 +1868,39 @@ export function ChatShell({
     >
       <aside className={`sidebar ${contactsOpen ? "contacts-open" : ""}`}>
         <div className="telegram-sidebar-top">
-          <details
-            className="telegram-menu-details"
-            open={menuOpen}
-            onToggle={(event) => setMenuOpen(event.currentTarget.open)}
-          >
-            <summary className="icon-btn" aria-label="Menu">
+          <div className="telegram-menu-details">
+            <button
+              ref={menuButtonRef}
+              className="icon-btn menu-toggle-btn"
+              type="button"
+              aria-label={t("management")}
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((open) => !open)}
+            >
               <span />
               <span />
               <span />
-            </summary>
-            <div className="telegram-menu" role="menu">
+            </button>
+            <div
+              ref={menuRef}
+              className={`telegram-menu ${menuOpen ? "is-open" : ""}`}
+              role="menu"
+              hidden={!menuOpen}
+            >
               <div className="telegram-menu-profile">
-                <BrandMark size="sm" className="brand-badge" />
+                <div className="chat-avatar profile-menu-avatar">
+                  {currentUserSummary.avatarUrl ? (
+                    <img
+                      src={currentUserSummary.avatarUrl}
+                      alt={currentUserSummary.name || t("user")}
+                    />
+                  ) : (
+                    (currentUserSummary.name || currentUser.name).slice(0, 1) || "K"
+                  )}
+                </div>
                 <div>
-                  <strong>{currentUser.name}</strong>
-                  <span>{currentUser.email}</span>
+                  <strong>{currentUserSummary.name}</strong>
+                  <span>{currentUserSummary.phone || currentUserSummary.email}</span>
                 </div>
               </div>
               <button
@@ -1767,7 +1916,7 @@ export function ChatShell({
                     ?.classList.toggle("is-hidden-composer");
                 }}
               >
-                New Group
+                {t("newGroup")}
               </button>
               <a
                 href="/app?contacts=1"
@@ -1776,39 +1925,37 @@ export function ChatShell({
                   void openContactsPanel();
                 }}
               >
-                Contacts
+                {t("contacts")}
               </a>
               <button
                 type="button"
                 onClick={() =>
-                  setStatus(
-                    "تماس صوتی/تصویری در نسخه وب آماده اتصال به WebRTC است، اما سرور signaling جداگانه نیاز دارد.",
-                  )
+                  setStatus(t("calls"))
                 }
               >
-                Calls
+                {t("calls")}
               </button>
               {savedChatId ? (
                 <a
                   href={`/app?chat=${encodeURIComponent(savedChatId)}`}
                   onClick={(event) => handleChatLink(event, savedChatId)}
                 >
-                  Saved Messages
+                  {t("savedMessages")}
                 </a>
               ) : (
                 <button type="button" onClick={() => void openSavedMessages()}>
-                  Saved Messages
+                  {t("savedMessages")}
                 </button>
               )}
-              <a href="/settings">Settings</a>
+              <a href="/settings">{t("settings")}</a>
               {currentUser.role === "admin" ? (
-                <a href="/admin">Admin Panel</a>
+                <a href="/admin">{t("adminPanel")}</a>
               ) : null}
               <button type="button" onClick={() => void handleLogout()}>
-                Log Out
+                {t("logout")}
               </button>
             </div>
-          </details>
+          </div>
           <div className="telegram-search">
             <span>⌕</span>
             <input
@@ -1818,7 +1965,7 @@ export function ChatShell({
                 setQuery(value);
                 void loadDirectory(value);
               }}
-              placeholder="Search"
+              placeholder={t("search")}
             />
           </div>
         </div>
@@ -1830,20 +1977,13 @@ export function ChatShell({
           <div className="segmented">
             <button
               type="button"
-              className={chatType === "direct" ? "active" : ""}
-              onClick={() => setChatType("direct")}
-            >
-              خصوصی
-            </button>
-            <button
-              type="button"
               className={chatType === "group" ? "active" : ""}
               onClick={() => {
                 setChatType("group");
                 void loadContacts();
               }}
             >
-              گروه
+              {t("group")}
             </button>
             <button
               type="button"
@@ -1853,70 +1993,55 @@ export function ChatShell({
                 void loadContacts();
               }}
             >
-              کانال
+              {t("channel")}
             </button>
           </div>
-
-          {chatType === "direct" ? (
-            <label>
-              <span>ایمیل طرف مقابل</span>
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="user@example.com"
-                required
-              />
-            </label>
-          ) : (
-            <>
-              <label>
-                <span>عنوان</span>
-                <input
-                  value={newTitle}
-                  onChange={(event) => setNewTitle(event.target.value)}
-                  placeholder="مثلا تیم فروش"
-                  required
-                />
-              </label>
-              <div className="contact-picker-box">
-                <div className="contact-picker-head">
-                  <span>انتخاب اعضا از مخاطبین</span>
-                  <button type="button" onClick={() => void loadContacts()}>
-                    به‌روزرسانی
-                  </button>
-                </div>
-                <div className="contact-picker-list">
-                  {contacts.map((item) => (
-                    <label
-                      key={`create-${item.userId}-${item.phone}`}
-                      className="contact-picker-row"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedMemberUserIds.includes(item.userId)}
-                        onChange={() => toggleSelectedMember(item.userId)}
-                      />
-                      <div className="chat-avatar">
-                        {item.name.slice(0, 1) || "T"}
-                      </div>
-                      <div>
-                        <strong>{item.name}</strong>
-                        <span>{item.phone || item.email}</span>
-                      </div>
-                    </label>
-                  ))}
-                  {contacts.length === 0 ? (
-                    <p className="empty-text">
-                      اول مخاطبین را از بخش Contacts اضافه یا sync کنید.
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            </>
-          )}
+          <label>
+            <span>{t("title")}</span>
+            <input
+              value={newTitle}
+              onChange={(event) => setNewTitle(event.target.value)}
+              placeholder={t("exampleTeamSales")}
+              required
+            />
+          </label>
+          <div className="contact-picker-box">
+            <div className="contact-picker-head">
+              <span>{t("chooseMembersFromContacts")}</span>
+              <button type="button" onClick={() => void loadContacts()}>
+                {t("refresh")}
+              </button>
+            </div>
+            <div className="contact-picker-list">
+              {contacts.map((item) => (
+                <label
+                  key={`create-${item.userId}-${item.phone}`}
+                  className="contact-picker-row"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedMemberUserIds.includes(item.userId)}
+                    onChange={() => toggleSelectedMember(item.userId)}
+                  />
+                  <div className="chat-avatar">
+                    {item.name.slice(0, 1) || "T"}
+                  </div>
+                  <div>
+                    <strong>{item.name}</strong>
+                    <span>{item.phone || item.email}</span>
+                  </div>
+                </label>
+              ))}
+              {contacts.length === 0 ? (
+                <p className="empty-text">
+                  {t("addOrSyncContactsFirst")}
+                </p>
+              ) : null}
+            </div>
+          </div>
 
           <button className="primary-btn" type="submit">
-            ساخت
+            {t("add")}
           </button>
         </form>
 
@@ -1924,8 +2049,8 @@ export function ChatShell({
           <div className="directory-list">
             {query ? (
               <>
-                {globalSearchLoading ? <p className="empty-text">در حال جستجو...</p> : null}
-                {globalSearchResults.chats.length ? <div className="search-section-title">گفتگوها، گروه‌ها و کانال‌ها</div> : null}
+                {globalSearchLoading ? <p className="empty-text">{t("loadingSearch")}</p> : null}
+                {globalSearchResults.chats.length ? <div className="search-section-title">{t("chatsGroupsChannels")}</div> : null}
                 {globalSearchResults.chats.map((chat) => (
                   <button
                     key={`search-chat-${chat.id}`}
@@ -1933,14 +2058,14 @@ export function ChatShell({
                     type="button"
                     onClick={() => selectChat(chat.id)}
                   >
-                    <div className={`chat-avatar ${chat.type}`}>{chat.title.slice(0, 1) || "T"}</div>
+                    <div className={`chat-avatar ${chat.type}`}>{getChatTitle(chat).slice(0, 1) || "T"}</div>
                     <div>
-                      <strong>{chat.title}</strong>
-                      <span>{chat.subtitle || chat.type}</span>
+                      <strong>{getChatTitle(chat)}</strong>
+                      <span>{chat.subtitle || getChatTypeLabel(chat.type)}</span>
                     </div>
                   </button>
                 ))}
-                {globalSearchResults.contacts.length ? <div className="search-section-title">مخاطبین</div> : null}
+                {globalSearchResults.contacts.length ? <div className="search-section-title">{t("contacts")}</div> : null}
                 {globalSearchResults.contacts.map((user) => (
                   <button
                     key={`search-contact-${user.id}`}
@@ -1955,7 +2080,7 @@ export function ChatShell({
                     </div>
                   </button>
                 ))}
-                {globalSearchResults.messages.length ? <div className="search-section-title">پیام‌ها</div> : null}
+                {globalSearchResults.messages.length ? <div className="search-section-title">{t("messagesLabel")}</div> : null}
                 {globalSearchResults.messages.map((item) => (
                   <button
                     key={`search-message-${item.chatId}-${item.messageId}`}
@@ -1978,7 +2103,7 @@ export function ChatShell({
                   !globalSearchResults.chats.length &&
                   !globalSearchResults.contacts.length &&
                   !globalSearchResults.messages.length ? (
-                  <p className="empty-text">نتیجه‌ای پیدا نشد.</p>
+                  <p className="empty-text">{t("noResultsFound")}</p>
                 ) : null}
               </>
             ) : (
@@ -2007,7 +2132,7 @@ export function ChatShell({
                   >
                     <div className="chat-avatar direct">+</div>
                     <div>
-                      <strong>Start chat</strong>
+                      <strong>{t("startChatWithEmail")}</strong>
                       <span>{query}</span>
                     </div>
                   </button>
@@ -2019,17 +2144,17 @@ export function ChatShell({
         {contactsOpen ? (
           <div className="contacts-box telegram-contacts">
             <div className="contacts-head">
-              <strong>Contacts</strong>
+              <strong>{t("contacts")}</strong>
               <div className="contacts-head-actions">
                 <button
                   type="button"
                   onClick={() => void importContactsFromPhone()}
                   disabled={importingContacts}
-                  title="Sync contacts"
+                  title={t("syncContacts")}
                 >
                   {importingContacts ? "..." : "⟳"}
                 </button>
-                <a href="/app" aria-label="Close contacts">
+                <a href="/app" aria-label={t("closeContacts")}>
                   ×
                 </a>
               </div>
@@ -2038,10 +2163,10 @@ export function ChatShell({
               <input
                 value={manualContactPhone}
                 onChange={(event) => setManualContactPhone(event.target.value)}
-                placeholder="Add by phone number"
+                placeholder={t("addByPhoneNumber")}
               />
               <button type="button" onClick={() => void addManualContact()}>
-                افزودن
+                {t("add")}
               </button>
             </div>
             <div className="directory-list contacts-list">
@@ -2062,7 +2187,7 @@ export function ChatShell({
                 </button>
               ))}
               {contacts.length === 0 ? (
-                <p className="empty-text">موردی برای نمایش نیست.</p>
+                <p className="empty-text">{t("nothingToShow")}</p>
               ) : null}
             </div>
           </div>
@@ -2080,17 +2205,17 @@ export function ChatShell({
           {pullPane === "list" || refreshingPane === "list" ? (
             <div className="pull-refresh-indicator">
               {refreshingPane === "list"
-                ? "در حال به‌روزرسانی..."
-                : "رها کنید برای به‌روزرسانی"}
+                ? t("refreshing")
+                : t("pullToRefresh")}
             </div>
           ) : null}
           <div className="chat-folders">
             {[
-              ["all", "All"],
-              ["direct", "Private"],
-              ["group", "Groups"],
-              ["channel", "Channels"],
-              ["archived", "Archive"],
+              ["all", t("allChats")],
+              ["direct", t("direct")],
+              ["group", t("groups")],
+              ["channel", t("channels")],
+              ["archived", t("archive")],
             ].map(([key, label]) => (
               <button
                 key={key}
@@ -2111,16 +2236,16 @@ export function ChatShell({
               onContextMenu={(event) => openChatContextMenu(event, chat)}
             >
               <div className={`chat-avatar ${chat.type}`}>
-                {chat.avatarUrl ? <img src={chat.avatarUrl} alt={chat.title || "Chat"} /> : chat.title?.slice(0, 1) || "T"}
+                {chat.avatarUrl ? <img src={chat.avatarUrl} alt={getChatTitle(chat)} /> : getChatTitle(chat).slice(0, 1) || "T"}
               </div>
               <div className="chat-row-main">
                 <div className="chat-row-title">
-                  <strong>{chat.title || "بدون عنوان"}</strong>
+                  <strong>{getChatTitle(chat)}</strong>
                   <div className="chat-row-meta">
                     <time suppressHydrationWarning>
-                      {formatChatTime(chat.lastMessageAt, "time")}
+                      {formatChatTime(chat.lastMessageAt, localeTag, "time")}
                     </time>
-                    {chat.isMuted ? <span title="Muted">🔕</span> : null}
+                    {chat.isMuted ? <span title={t("mute")}>🔕</span> : null}
                     {chat.unreadCount ? (
                       <span className="chat-unread-badge">
                         {chat.unreadCount}
@@ -2130,7 +2255,7 @@ export function ChatShell({
                 </div>
                 <span>
                   {chat.pinnedMessageIds?.includes("__chat__") ? "📌 " : ""}
-                  {chat.lastMessageText || chat.subtitle || "No messages yet"}
+                  {chat.lastMessageText || chat.subtitle || t("noMessagesYet")}
                 </span>
               </div>
             </a>
@@ -2141,7 +2266,7 @@ export function ChatShell({
       <section className={`chat-stage ${chatSearchOpen ? "is-chat-search-open" : ""} ${activePinnedMessage ? "has-pinned-message" : ""}`}>
         {!activeChat ? (
           <div className="no-chat-selected">
-            <span>Select a chat to start messaging</span>
+            <span>{t("selectChatToStart")}</span>
           </div>
         ) : (
           <>
@@ -2149,7 +2274,7 @@ export function ChatShell({
               <button
                 className="mobile-back-btn"
                 type="button"
-                aria-label="Back to chats"
+                aria-label={t("backToChats")}
                 onClick={() => setMobilePane("list")}
               >
                 ‹
@@ -2160,41 +2285,29 @@ export function ChatShell({
                 onClick={() => void loadChatProfile()}
               >
                 <div className={`chat-avatar ${activeChat?.type || ""}`}>
-                  {activeChat?.avatarUrl ? <img src={activeChat.avatarUrl} alt={activeChat.title || "Chat"} /> : activeChat?.title?.slice(0, 1) || "T"}
+                  {activeChat?.avatarUrl ? <img src={activeChat.avatarUrl} alt={getChatTitle(activeChat)} /> : getChatTitle(activeChat).slice(0, 1) || "T"}
                 </div>
                 <div>
                   <strong>
-                    {activeChat?.title || "یک گفتگو را انتخاب کنید"}
+                    {getChatTitle(activeChat) || t("selectChatToStart")}
                   </strong>
                   <span>
                     {typingUsersText ||
                       (activeChat?.type === "direct"
                         ? peerPresence?.isOnline
-                          ? "online"
+                          ? t("online")
                           : peerPresence?.lastSeenAt
-                            ? `last seen ${formatChatTime(peerPresence.lastSeenAt)}`
-                            : "last seen recently"
-                        : activeChat?.subtitle || "online")}
+                            ? `${t("lastSeen")} ${formatChatTime(peerPresence.lastSeenAt, localeTag)}`
+                            : t("lastSeenRecently")
+                        : activeChat?.subtitle || t("online"))}
                   </span>
                 </div>
               </button>
-              {activeChat &&
-                (activeChat.type === "group" || activeChat.type === "channel") ? (
-                <div className="inline-tools">
-                  <input
-                    value={memberEmails}
-                    onChange={(event) => setMemberEmails(event.target.value)}
-                    placeholder="افزودن عضو با ایمیل"
-                  />
-                  <button type="button" onClick={addMembers}>
-                    افزودن عضو
-                  </button>
-                </div>
-              ) : null}
               <div className="chat-head-actions">
                 <button
+                  className="search-toggle-btn"
                   type="button"
-                  title="Search"
+                  title={t("search")}
                   onClick={() => {
                     setChatSearchOpen((open) => !open);
                     setActiveSearchResult(0);
@@ -2203,8 +2316,10 @@ export function ChatShell({
                   ⌕
                 </button>
                 <button
+                  ref={chatActionsButtonRef}
+                  className="more-toggle-btn"
                   type="button"
-                  title="More"
+                  title={t("management")}
                   onClick={() => setChatActionsOpen((open) => !open)}
                 >
                   ⋮
@@ -2219,7 +2334,7 @@ export function ChatShell({
                     setChatSearchQuery(event.target.value);
                     setActiveSearchResult(0);
                   }}
-                  placeholder="جستجو در پیام‌های این گفتگو"
+                  placeholder={t("searchInThisChat")}
                 />
                 <span>
                   {searchMatches.length === 0
@@ -2266,13 +2381,13 @@ export function ChatShell({
                     })
                   }
                 >
-                  <strong>پیام پین‌شده</strong>
-                  <span>{activePinnedMessage.text || activePinnedMessage.attachment?.name || "پیام"}</span>
+                  <strong>{t("pinnedMessage")}</strong>
+                  <span>{activePinnedMessage.text || activePinnedMessage.attachment?.name || t("message")}</span>
                 </button>
                 <button
                   type="button"
                   className="pinned-message-close"
-                  aria-label="Unpin message"
+                  aria-label={t("unpinMessage")}
                   onClick={() => void applyChatAction("unpin", activePinnedMessage.id)}
                 >
                   ×
@@ -2292,8 +2407,8 @@ export function ChatShell({
               {pullPane === "chat" || refreshingPane === "chat" ? (
                 <div className="pull-refresh-indicator">
                   {refreshingPane === "chat"
-                    ? "در حال به‌روزرسانی..."
-                    : "رها کنید برای به‌روزرسانی"}
+                    ? t("refreshing")
+                    : t("pullToRefresh")}
                 </div>
               ) : null}
               {messages.map((message) => {
@@ -2347,16 +2462,16 @@ export function ChatShell({
                           })
                         }
                       >
-                        <strong>{message.replyTo.senderName || "Reply"}</strong>
-                        <span>{message.replyTo.text || "پیام"}</span>
+                        <strong>{message.replyTo.senderName || t("reply")}</strong>
+                        <span>{message.replyTo.text || t("message")}</span>
                       </button>
                     ) : null}
                     {message.forwardedFrom ? (
                       <div className="forwarded-label">
-                        Forwarded from{" "}
+                        {t("forward")}{" "}
                         {message.forwardedFrom.senderName ||
                           message.forwardedFrom.senderEmail ||
-                          "Unknown"}
+                          t("unknownDevice")}
                       </div>
                     ) : null}
                     {message.text ? (
@@ -2406,8 +2521,8 @@ export function ChatShell({
                     ) : null}
                     <div className="bubble-foot">
                       <time suppressHydrationWarning>
-                        {formatChatTime(message.createdAt)}
-                        {message.editedAt ? " (ویرایش‌شده)" : ""}
+                        {formatChatTime(message.createdAt, localeTag)}
+                        {message.editedAt ? ` ${t("editedSuffix")}` : ""}
                       </time>
                       {own &&
                         activeChat?.type === "direct" ? (
@@ -2424,7 +2539,7 @@ export function ChatShell({
                       <button
                         className="message-more-btn"
                         type="button"
-                        aria-label="Message actions"
+                        aria-label={t("messageActions")}
                         onClick={(event) => openMessageMenu(event, message)}
                       >
                         ⋯
@@ -2435,8 +2550,8 @@ export function ChatShell({
               })}
               {messages.length === 0 ? (
                 <div className="empty-chat">
-                  <strong>شروع گفتگو</strong>
-                  <span>اولین پیام را برای این گفتگو بفرستید.</span>
+                  <strong>{t("startChat")}</strong>
+                  <span>{t("startChatHint")}</span>
                 </div>
               ) : null}
               <div ref={messagesEndRef} />
@@ -2444,12 +2559,12 @@ export function ChatShell({
 
             {selectedMessageIds.length > 0 ? (
               <div className="selection-bar">
-                <strong>{selectedMessageIds.length} selected</strong>
+                <strong>{selectedMessageIds.length} {t("selectedCount")}</strong>
                 {selectedMessageIds.length === 1 ? (
                   <button type="button" onClick={() => void pinSelectedMessage()}>
                     {activeChat?.pinnedMessageIds?.includes(selectedMessageIds[0])
-                      ? "Unpin"
-                      : "Pin"}
+                      ? t("unpin")
+                      : t("pin")}
                   </button>
                 ) : null}
                 <button
@@ -2465,19 +2580,19 @@ export function ChatShell({
                     }
                   }}
                 >
-                  Forward
+                  {t("forward")}
                 </button>
                 <button
                   type="button"
                   onClick={() => void deleteSelectedMessages("me")}
                 >
-                  Delete for me
+                  {t("deleteForMe")}
                 </button>
                 <button
                   type="button"
                   onClick={() => void deleteSelectedMessages("everyone")}
                 >
-                  Delete for everyone
+                  {t("deleteForEveryone")}
                 </button>
                 <button type="button" onClick={() => setSelectedMessageIds([])}>
                   ×
@@ -2488,11 +2603,11 @@ export function ChatShell({
             {replyToMessage && !editingMessageId ? (
               <div className="edit-composer-bar reply-composer-bar">
                 <div>
-                  <strong>Reply to {replyToMessage.senderName}</strong>
+                  <strong>{t("replyTo")} {replyToMessage.senderName}</strong>
                   <span>
                     {replyToMessage.text ||
                       replyToMessage.attachment?.name ||
-                      "پیام"}
+                      t("message")}
                   </span>
                 </div>
                 <button type="button" onClick={() => setReplyToMessage(null)}>
@@ -2504,8 +2619,8 @@ export function ChatShell({
             {editingMessageId ? (
               <div className="edit-composer-bar">
                 <div>
-                  <strong>ویرایش پیام</strong>
-                  <span>{editingText || "متن پیام"}</span>
+                  <strong>{t("editMessage")}</strong>
+                  <span>{editingText || t("messageText")}</span>
                 </div>
                 <button type="button" onClick={cancelEditMessage}>
                   ×
@@ -2516,7 +2631,7 @@ export function ChatShell({
             {selectedFiles.length > 0 && !editingMessageId ? (
               <div
                 className="selected-files selected-files-preview"
-                aria-label="Selected files preview"
+                aria-label={t("selectedFilesPreview")}
               >
                 {selectedFiles.map((file, index) => {
                   const isImage = file.type.startsWith("image/");
@@ -2571,7 +2686,7 @@ export function ChatShell({
                   Boolean(editingMessageId) ||
                   !canPostInActiveChat
                 }
-                title="ارسال فایل"
+                title={t("sendFile")}
                 onClick={() => fileInputRef.current?.click()}
               >
                 +
@@ -2593,8 +2708,8 @@ export function ChatShell({
                 }}
                 placeholder={
                   canPostInActiveChat || editingMessageId
-                    ? "Message"
-                    : "Only admins can post in this channel"
+                    ? t("message")
+                    : t("onlyAdminsCanPost")
                 }
                 disabled={
                   !activeChat ||
@@ -2605,12 +2720,13 @@ export function ChatShell({
               <button
                 className="send-btn"
                 type="submit"
+                data-dir={dir}
                 disabled={
                   !activeChat ||
                   uploading ||
                   (!canPostInActiveChat && !editingMessageId)
                 }
-                title={editingMessageId ? "ذخیره ویرایش" : "ارسال"}
+                title={editingMessageId ? t("saveEdit") : t("send")}
               >
                 <span>➤</span>
               </button>
@@ -2622,9 +2738,9 @@ export function ChatShell({
       </section>
 
       {chatActionsOpen && activeChat ? (
-        <div className="chat-actions-popover">
+        <div ref={chatActionsRef} className="chat-actions-popover">
           <button type="button" onClick={() => void loadChatProfile()}>
-            Profile
+            {t("profile")}
           </button>
           <button
             type="button"
@@ -2632,7 +2748,7 @@ export function ChatShell({
               void applyChatAction(activeChat.isMuted ? "unmute" : "mute")
             }
           >
-            {activeChat.isMuted ? "Unmute" : "Mute"}
+            {activeChat.isMuted ? t("unmute") : t("mute")}
           </button>
           <button
             type="button"
@@ -2642,24 +2758,34 @@ export function ChatShell({
               )
             }
           >
-            {activeChat.isArchived ? "Unarchive" : "Archive"}
+            {activeChat.isArchived ? t("unarchive") : t("archive")}
           </button>
           <button type="button" onClick={() => void applyChatAction("unpin")}>
-            Clear pinned messages
+            {t("clearPinnedMessages")}
           </button>
           <button
             type="button"
             onClick={() => void applyChatAction("clearHistory")}
           >
-            Clear history
+            {t("clearHistory")}
           </button>
+          {activeChat.type !== "saved" &&
+          activeChat.createdByUserId === currentUser.id ? (
+            <button
+              type="button"
+              className="danger"
+              onClick={() => void applyChatAction("deleteChat")}
+            >
+              حذف گروه یا کانال
+            </button>
+          ) : null}
           {activeChat.type !== "saved" ? (
             <button
               type="button"
               className="danger"
               onClick={() => void applyChatAction("leave")}
             >
-              Leave
+              {t("leave")}
             </button>
           ) : null}
         </div>
@@ -2670,13 +2796,17 @@ export function ChatShell({
           <div className="profile-card">
             <div className="profile-head">
               <div className={`chat-avatar ${activeChat?.type || ""}`}>
-                {activeChat?.title?.slice(0, 1) || "T"}
+                {activeChat?.avatarUrl ? (
+                  <img src={activeChat.avatarUrl} alt={getChatTitle(activeChat)} />
+                ) : (
+                  getChatTitle(activeChat).slice(0, 1) || "T"
+                )}
               </div>
               <div>
-                <strong>{activeChat?.title}</strong>
+                <strong>{getChatTitle(activeChat)}</strong>
                 <span>
                   {activeChat?.subtitle ||
-                    `${chatProfile.members?.length || 0} members`}
+                    `${chatProfile.members?.length || 0} ${t("members")}`}
                 </span>
               </div>
               <button type="button" onClick={() => setChatProfileOpen(false)}>
@@ -2684,8 +2814,39 @@ export function ChatShell({
               </button>
             </div>
             <div className="profile-sections">
+              {(activeChat?.type === "group" || activeChat?.type === "channel") &&
+              chatProfile.canManageAvatar ? (
+                <section>
+                  <h3>تصویر گروه یا کانال</h3>
+                  <div className="form-actions">
+                    <input
+                      ref={chatAvatarInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      className="file-input"
+                      onChange={uploadChatAvatar}
+                    />
+                    <button
+                      className="ghost-btn"
+                      type="button"
+                      disabled={chatAvatarBusy}
+                      onClick={() => chatAvatarInputRef.current?.click()}
+                    >
+                      آپلود تصویر
+                    </button>
+                    <button
+                      className="ghost-btn danger"
+                      type="button"
+                      disabled={chatAvatarBusy || !activeChat?.avatarUrl}
+                      onClick={() => void deleteChatAvatar()}
+                    >
+                      حذف تصویر
+                    </button>
+                  </div>
+                </section>
+              ) : null}
               <section>
-                <h3>Pinned messages</h3>
+                <h3>{t("pinnedMessage")}</h3>
                 {(chatProfile.pinned || []).map((item: any) => (
                   <button
                     key={item.id}
@@ -2700,51 +2861,142 @@ export function ChatShell({
                     }}
                   >
                     <strong>{item.senderName}</strong>
-                    <span>{item.text || "پیام"}</span>
+                    <span>{item.text || t("message")}</span>
                   </button>
                 ))}
                 {!(chatProfile.pinned || []).length ? (
-                  <p className="empty-text">پیامی pin نشده است.</p>
+                  <p className="empty-text">{t("noPinnedMessages")}</p>
                 ) : null}
               </section>
               <section>
-                <h3>Members</h3>
+                <div className="panel-title-row">
+                  <h3>{t("members")}</h3>
+                  {chatProfile.canAddMembers ? (
+                    <button
+                      className="ghost-btn"
+                      type="button"
+                      onClick={() => {
+                        setProfileSelectedMemberIds([]);
+                        setProfileMemberPickerOpen((open) => !open);
+                        void loadContacts();
+                      }}
+                    >
+                      + 👤
+                    </button>
+                  ) : null}
+                </div>
+                {chatProfile.canAddMembers && profileMemberPickerOpen ? (
+                  <div className="contact-picker-box compact-picker">
+                    <div className="contact-picker-list">
+                      {contacts
+                        .filter(
+                          (item) =>
+                            !(chatProfile.members || []).some(
+                              (member: any) => member.id === item.userId,
+                            ),
+                        )
+                        .map((item) => (
+                          <label
+                            key={`profile-add-${item.userId}-${item.phone}`}
+                            className="contact-picker-row"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={profileSelectedMemberIds.includes(item.userId)}
+                              onChange={() =>
+                                setProfileSelectedMemberIds((current) =>
+                                  current.includes(item.userId)
+                                    ? current.filter((id) => id !== item.userId)
+                                    : [...current, item.userId],
+                                )
+                              }
+                            />
+                            <div className="chat-avatar">
+                              {item.name.slice(0, 1) || "T"}
+                            </div>
+                            <div>
+                              <strong>{item.name}</strong>
+                              <span>{item.phone || item.email}</span>
+                            </div>
+                          </label>
+                        ))}
+                      {contacts.filter(
+                        (item) =>
+                          !(chatProfile.members || []).some(
+                            (member: any) => member.id === item.userId,
+                          ),
+                      ).length === 0 ? (
+                        <p className="empty-text">
+                          {t("addOrSyncContactsFirst")}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="form-actions">
+                      <button
+                        className="ghost-btn"
+                        type="button"
+                        onClick={() => {
+                          setProfileMemberPickerOpen(false);
+                          setProfileSelectedMemberIds([]);
+                        }}
+                      >
+                        {t("cancel")}
+                      </button>
+                      {profileSelectedMemberIds.length > 0 ? (
+                        <button
+                          className="primary-btn"
+                          type="button"
+                          onClick={() => void addMembers(profileSelectedMemberIds)}
+                        >
+                          {t("addMember")}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
                 {(chatProfile.members || []).map((member: any) => (
                   <div key={member.id} className="profile-row member-row">
                     <div>
                       <strong>{member.name}</strong>
                       <span>
-                        {member.email}
-                        {member.isAdmin ? " · admin" : ""}
+                        {member.phone || member.email}
+                        {member.isCreator ? " · سازنده" : ""}
+                        {member.isAdmin ? ` · ${t("admin")}` : ""}
                       </span>
                     </div>
-                    {activeChat?.adminIds.includes(currentUser.id) &&
-                      member.id !== currentUser.id ? (
+                    {member.id !== currentUser.id ? (
                       <div className="member-actions">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void updateMember(
-                              member.id,
-                              member.isAdmin ? "demote" : "promote",
-                            )
-                          }
-                        >
-                          {member.isAdmin ? "Demote" : "Promote"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void updateMember(member.id, "remove")}
-                        >
-                          Remove
-                        </button>
+                        {chatProfile.isCreator && !member.isCreator ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void updateMember(
+                                member.id,
+                                member.isAdmin ? "demote" : "promote",
+                              )
+                            }
+                          >
+                            {member.isAdmin ? t("demote") : t("promote")}
+                          </button>
+                        ) : null}
+                        {(chatProfile.isCreator ||
+                          (activeChat?.adminIds.includes(currentUser.id) &&
+                            !member.isAdmin)) &&
+                        !member.isCreator ? (
+                          <button
+                            type="button"
+                            onClick={() => void updateMember(member.id, "remove")}
+                          >
+                            {t("remove")}
+                          </button>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>
                 ))}
               </section>
               <section>
-                <h3>Shared media</h3>
+                <h3>{t("sharedMedia")}</h3>
                 <div className="profile-media-grid">
                   {(chatProfile.media || []).map((item: any) =>
                     item.attachment?.isImage ? (
@@ -2802,7 +3054,7 @@ export function ChatShell({
             target="_blank"
             rel="noreferrer"
           >
-            Download
+            {t("download")}
           </a>
         </div>
       ) : null}
@@ -2810,9 +3062,9 @@ export function ChatShell({
       {passcodeLocked ? (
         <div className="passcode-lock">
           <div>
-            <strong>Teleir is locked</strong>
+            <strong>{t("messengerLocked")}</strong>
             <button type="button" onClick={unlockPasscode}>
-              Unlock
+              {t("unlock")}
             </button>
           </div>
         </div>
@@ -2838,7 +3090,7 @@ export function ChatShell({
               role="menuitem"
               onClick={() => void reactToMessage(messageMenu.message, "👍")}
             >
-              <span>React</span>
+              <span>{t("react")}</span>
               <b>👍</b>
             </button>
             <button
@@ -2846,7 +3098,7 @@ export function ChatShell({
               role="menuitem"
               onClick={() => toggleMessageSelection(messageMenu.message.id)}
             >
-              <span>Select</span>
+              <span>{t("select")}</span>
               <b>✓</b>
             </button>
             <button
@@ -2854,7 +3106,7 @@ export function ChatShell({
               role="menuitem"
               onClick={() => startReplyMessage(messageMenu.message)}
             >
-              <span>Reply</span>
+              <span>{t("reply")}</span>
               <b>↩</b>
             </button>
             <button
@@ -2867,7 +3119,7 @@ export function ChatShell({
                 )
               }
             >
-              <span>{activeChat?.pinnedMessageIds?.includes(messageMenu.message.id) ? "Unpin" : "Pin"}</span>
+              <span>{activeChat?.pinnedMessageIds?.includes(messageMenu.message.id) ? t("unpin") : t("pin")}</span>
               <b>📌</b>
             </button>
             {messageMenu.message.text?.trim() ? (
@@ -2876,7 +3128,7 @@ export function ChatShell({
                 role="menuitem"
                 onClick={() => void copyMessage(messageMenu.message)}
               >
-                <span>Copy</span>
+                <span>{t("copy")}</span>
                 <b>⧉</b>
               </button>
             ) : null}
@@ -2890,7 +3142,7 @@ export function ChatShell({
                 rel="noreferrer"
                 onClick={() => setMessageMenu(null)}
               >
-                <span>Download</span>
+                <span>{t("download")}</span>
                 <b>⇩</b>
               </a>
             ) : null}
@@ -2899,7 +3151,7 @@ export function ChatShell({
               role="menuitem"
               onClick={() => startForwardMessage(messageMenu.message)}
             >
-              <span>Forward</span>
+              <span>{t("forward")}</span>
               <b>↗</b>
             </button>
             <button
@@ -2908,7 +3160,7 @@ export function ChatShell({
               className="danger"
               onClick={() => void deleteMessageForMe(messageMenu.message.id)}
             >
-              <span>Delete for me</span>
+              <span>{t("deleteForMe")}</span>
               <b>⌫</b>
             </button>
             {isOwnMessage(messageMenu.message, currentUser) ? (
@@ -2918,7 +3170,7 @@ export function ChatShell({
                   role="menuitem"
                   onClick={() => startEditMessage(messageMenu.message)}
                 >
-                  <span>Edit</span>
+                  <span>{t("edit")}</span>
                   <b>✎</b>
                 </button>
                 <button
@@ -2927,7 +3179,7 @@ export function ChatShell({
                   className="danger"
                   onClick={() => void deleteMessage(messageMenu.message.id)}
                 >
-                  <span>Delete for everyone</span>
+                  <span>{t("deleteForEveryone")}</span>
                   <b>⌫</b>
                 </button>
               </>
@@ -2962,7 +3214,7 @@ export function ChatShell({
               }
             >
               <span>
-                {chatContextMenu.chat.isArchived ? "Unarchive" : "Archive"}
+                {chatContextMenu.chat.isArchived ? t("unarchiveChat") : t("archiveChat")}
               </span>
               <b>🗄</b>
             </button>
@@ -2981,8 +3233,8 @@ export function ChatShell({
               >
                 <span>
                   {chatContextMenu.chat.pinnedMessageIds?.includes("__chat__")
-                    ? "Unpin chat"
-                    : "Pin chat"}
+                    ? t("unpinChat")
+                    : t("pinChat")}
                 </span>
                 <b>📌</b>
               </button>
@@ -2997,7 +3249,7 @@ export function ChatShell({
                 )
               }
             >
-              <span>{chatContextMenu.chat.isMuted ? "Unmute" : "Mute"}</span>
+              <span>{chatContextMenu.chat.isMuted ? t("unmute") : t("mute")}</span>
               <b>🔕</b>
             </button>
           </div>
@@ -3022,7 +3274,7 @@ export function ChatShell({
         <div className="forward-modal" role="dialog" aria-modal="true">
           <div className="forward-card">
             <div className="forward-head">
-              <strong>فوروارد به</strong>
+              <strong>{t("forwardTo")}</strong>
               <button
                 type="button"
                 onClick={() => {
@@ -3043,9 +3295,9 @@ export function ChatShell({
                     setHideForwardSender(event.target.checked)
                   }
                 />{" "}
-                Hide sender name
+                {t("hideSenderName")}
               </label>
-              <div className="forward-section-title">گفتگوها</div>
+              <div className="forward-section-title">{t("chatsGroupsChannels")}</div>
               {chats
                 .filter((chat) => chat.id !== activeChatId)
                 .map((chat) => {
@@ -3064,7 +3316,7 @@ export function ChatShell({
                         {chat.title?.slice(0, 1) || "T"}
                       </div>
                       <div>
-                        <strong>{chat.title || "بدون عنوان"}</strong>
+                        <strong>{getChatTitle(chat)}</strong>
                         <span>
                           {chat.subtitle || chat.lastMessageText || ""}
                         </span>
@@ -3072,7 +3324,7 @@ export function ChatShell({
                     </label>
                   );
                 })}
-              <div className="forward-section-title">مخاطبین</div>
+              <div className="forward-section-title">{t("contacts")}</div>
               {contacts.map((item) => {
                 const targetId = `contact:${item.email}`;
                 return (
@@ -3096,17 +3348,17 @@ export function ChatShell({
                 );
               })}
               {chats.length <= 1 && contacts.length === 0 ? (
-                <p className="empty-text">مقصدی برای فوروارد وجود ندارد.</p>
+                <p className="empty-text">{t("noForwardTarget")}</p>
               ) : null}
             </div>
             <div className="forward-footer">
-              <span>{forwardTargetIds.length} مقصد انتخاب شده</span>
+              <span>{forwardTargetIds.length} {t("selectedTargetsCount")}</span>
               <button
                 type="button"
                 className="primary-btn"
                 onClick={() => void submitForwardSelectedMessages()}
               >
-                ارسال
+                {t("send")}
               </button>
             </div>
           </div>
@@ -3131,15 +3383,15 @@ export function ChatShell({
                     const text = button.dataset.copyText || "";
                     if (navigator.clipboard && text) {
                       await navigator.clipboard.writeText(text);
-                      alert("کپی شد.");
+                      alert(${JSON.stringify(t("copiedText"))});
                     } else if (text) {
-                      prompt("برای کپی، متن زیر را بردارید:", text);
+                      prompt(${JSON.stringify(t("copy"))}, text);
                     }
                     return;
                   }
                   if (!chatId || !messageId) return;
                   if (action === "delete") {
-                    if (!confirm("این پیام حذف شود؟")) return;
+                    if (!confirm(${JSON.stringify(t("deleteMessageConfirm"))})) return;
                     const response = await fetch("/api/chats/" + chatId + "/messages/" + messageId, {
                       method: "DELETE"
                     });
@@ -3148,7 +3400,7 @@ export function ChatShell({
                     return;
                   }
                   if (action === "edit") {
-                    const nextText = prompt("متن جدید پیام:", button.dataset.messageText || "");
+                    const nextText = prompt(${JSON.stringify(t("editMessage"))}, button.dataset.messageText || "");
                     if (!nextText || !nextText.trim()) return;
                     const response = await fetch("/api/chats/" + chatId + "/messages/" + messageId, {
                       method: "PATCH",
@@ -3164,9 +3416,9 @@ export function ChatShell({
                     const options = rows.map((row, index) => ({
                       index: index + 1,
                       id: new URL(row.href, location.href).searchParams.get("chat") || "",
-                      title: row.querySelector("strong")?.textContent || "Chat"
+                      title: row.querySelector("strong")?.textContent || ${JSON.stringify(t("startChat"))}
                     })).filter((item) => item.id);
-                    const picked = prompt(options.map((item) => item.index + ". " + item.title).join("\\n") + "\\n\\nشماره چت مقصد را وارد کنید:");
+                    const picked = prompt(options.map((item) => item.index + ". " + item.title).join("\\n") + "\\n\\n" + ${JSON.stringify(t("forwardTo"))});
                     const target = options[Number(picked) - 1];
                     if (!target) return;
                     const response = await fetch("/api/chats/" + chatId + "/messages/" + messageId + "/forward", {
@@ -3178,7 +3430,7 @@ export function ChatShell({
                     location.href = "/app?chat=" + encodeURIComponent(target.id);
                   }
                 } catch {
-                  alert("عملیات انجام نشد. صفحه را رفرش کنید و دوباره تلاش کنید.");
+                  alert(${JSON.stringify(t("operationFailed"))});
                 }
               });
             })();

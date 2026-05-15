@@ -1,6 +1,6 @@
 {
   "name": "teleir",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p 3012",

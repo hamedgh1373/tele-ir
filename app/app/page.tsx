@@ -24,6 +24,10 @@ export default async function AppPage({
   const session = await requireSession();
   const params = (await searchParams) || {};
   const db = await getDb();
+  const currentDbUser = await db.collection("users").findOne(
+    { id: session.user.id },
+    { projection: { _id: 0, id: 1, phone: 1, avatar: 1 } }
+  ) as { id: string; phone?: string; avatar?: { updatedAt?: string } } | null;
   const chats = toPlainList<ChatItem>(await listChatsForUser(session.user.id));
   const requestedChatId = params.chat || "";
   const activeChatId = chats.some((chat) => chat.id === requestedChatId)
@@ -79,7 +83,13 @@ export default async function AppPage({
   return (
     <main className="workspace-page">
       <ChatShell
-        currentUser={session.user}
+        currentUser={{
+          ...session.user,
+          phone: currentDbUser?.phone,
+          avatarUrl: currentDbUser?.avatar
+            ? `/api/account/avatar?t=${currentDbUser.avatar.updatedAt || Date.now()}`
+            : undefined
+        }}
         initialChats={chats}
         initialActiveChatId={activeChatId}
         initialMessages={messages}

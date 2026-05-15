@@ -22,6 +22,7 @@ type ChatRecord = {
   id: string;
   type: ChatType;
   title: string;
+  avatar?: { updatedAt?: string };
   participantIds: string[];
   adminIds: string[];
   createdByUserId: string;
@@ -267,6 +268,7 @@ export async function listChatsForUser(
       ...chat,
       lastMessageText,
       unreadCount: chat.unreadCounts?.[userId] ?? 0,
+      avatarUrl: chat.avatar ? `/api/chats/${chat.id}/avatar?t=${chat.avatar.updatedAt || ""}` : undefined,
       subtitle:
         chat.type === "group"
           ? `${chat.participantIds.length} عضو`

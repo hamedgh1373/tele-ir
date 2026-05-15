@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { useI18n } from "@/components/i18n-provider";
 
 type ProfileUser = {
   id: string;
@@ -17,6 +18,7 @@ type ProfileUser = {
 };
 
 export function ProfileSettings() {
+  const { t } = useI18n();
   const [user, setUser] = useState<ProfileUser | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState("");
@@ -50,11 +52,12 @@ export function ProfileSettings() {
     const data = await response.json().catch(() => ({}));
     setBusy(false);
     if (!response.ok) {
-      setStatus(data.error || "آپلود تصویر پروفایل انجام نشد.");
+      setStatus(t("profileUploadFailed"));
       return;
     }
     setFile(null);
-    setStatus("تصویر پروفایل ذخیره شد.");
+    window.dispatchEvent(new Event("kaman-profile-updated"));
+    setStatus(t("imageSaved"));
     await loadProfile();
   }
 
@@ -65,35 +68,36 @@ export function ProfileSettings() {
     const data = await response.json().catch(() => ({}));
     setBusy(false);
     if (!response.ok) {
-      setStatus(data.error || "حذف تصویر پروفایل انجام نشد.");
+      setStatus(t("profileDeleteFailed"));
       return;
     }
-    setStatus("تصویر پروفایل حذف شد.");
+    window.dispatchEvent(new Event("kaman-profile-updated"));
+    setStatus(t("imageDeleted"));
     await loadProfile();
   }
 
   return (
     <section id="profile" className="settings-card profile-settings-card">
-      <h2>پروفایل</h2>
-      <p>تصویر پروفایل داخل دیتابیس ذخیره می‌شود و با حذف آن، داده تصویر هم از رکورد کاربر حذف می‌شود.</p>
+      <h2>{t("profileTitle")}</h2>
+      <p>{t("profileSubtitle")}</p>
       <div className="profile-settings-row">
         <div className="profile-settings-avatar">
           {user?.avatar ? (
-            <img src={`/api/account/avatar?t=${user.avatar.updatedAt || Date.now()}`} alt="Profile" />
+            <img src={`/api/account/avatar?t=${user.avatar.updatedAt || Date.now()}`} alt={t("profileTitle")} />
           ) : (
             <span>{user?.name?.slice(0, 1) || "T"}</span>
           )}
         </div>
         <div>
-          <strong>{user?.name || "کاربر"}</strong>
+          <strong>{user?.name || t("user")}</strong>
           <span>{user?.phone || user?.email || ""}</span>
           {user?.avatar?.size ? <small>{Math.ceil(user.avatar.size / 1024)} KB</small> : null}
         </div>
       </div>
       <form className="profile-avatar-form" onSubmit={uploadAvatar}>
         <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleFileChange} />
-        <button type="submit" disabled={busy || !file}>ذخیره تصویر</button>
-        <button type="button" disabled={busy || !user?.avatar} onClick={() => void deleteAvatar()}>حذف تصویر</button>
+        <button type="submit" disabled={busy || !file}>{t("saveImage")}</button>
+        <button type="button" disabled={busy || !user?.avatar} onClick={() => void deleteAvatar()}>{t("deleteImage")}</button>
       </form>
       {status ? <p className="status-line">{status}</p> : null}
     </section>

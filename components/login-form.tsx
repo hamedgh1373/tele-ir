@@ -1,7 +1,6 @@
 "use client";
 
-import { FormEvent, useRef, useState } from "react";
-import { signIn } from "next-auth/react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 function toEnglishDigits(value: string) {
   return value
@@ -9,19 +8,92 @@ function toEnglishDigits(value: string) {
     .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
 }
 
-export function LoginForm() {
-  const [step, setStep] = useState<"phone" | "code">("phone");
-  const [phone, setPhone] = useState("");
+type LoginFormLabels = {
+  phoneNumber: string;
+  sendCode: string;
+  resendCode: string;
+  sendingCode: string;
+  loginPhonePlaceholder: string;
+  invalidPhoneMessage: string;
+  sendCodeFailed: string;
+  codeSentNotice: string;
+  codeSentTo: string;
+  changePhone: string;
+  verifyingCodeTitle: string;
+  verifyCode: string;
+  verifyingCode: string;
+  invalidOtpMessage: string;
+  otpRequiredFirst: string;
+  verifyCodeFailed: string;
+  resendAvailableIn: string;
+  autoReadHint: string;
+};
+
+export function LoginForm({
+  labels,
+  initialPhone = "",
+  initialRequestId = "",
+}: {
+  labels: LoginFormLabels;
+  initialPhone?: string;
+  initialRequestId?: string;
+}) {
+  const [step, setStep] = useState<"phone" | "code">(
+    initialRequestId ? "code" : "phone",
+  );
+  const [phone, setPhone] = useState(initialPhone);
   const [otpCode, setOtpCode] = useState("");
-  const [requestId, setRequestId] = useState("");
+  const [requestId, setRequestId] = useState(initialRequestId);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resendCountdown, setResendCountdown] = useState(initialRequestId ? 90 : 0);
   const phoneInputRef = useRef<HTMLInputElement | null>(null);
   const codeInputRef = useRef<HTMLInputElement | null>(null);
   const normalizedPhone = toEnglishDigits(phone).replace(/\D+/g, "").slice(0, 11);
-  const phoneIsValid = /^09\d{9}$/.test(normalizedPhone);
   const normalizedOtpCode = toEnglishDigits(otpCode).replace(/\D+/g, "").slice(0, 6);
+
+  useEffect(() => {
+    if (step !== "code" || resendCountdown <= 0) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setResendCountdown((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [resendCountdown, step]);
+
+  useEffect(() => {
+    if (step !== "code" || !requestId) {
+      return;
+    }
+
+    const nav = navigator as Navigator & {
+      credentials?: {
+        get?: (options?: Record<string, unknown>) => Promise<{ code?: string } | null>;
+      };
+    };
+
+    if (typeof window === "undefined" || !window.isSecureContext || !nav.credentials?.get) {
+      return;
+    }
+
+    const controller = new AbortController();
+    void nav.credentials
+      .get({
+        otp: { transport: ["sms"] },
+        signal: controller.signal,
+      })
+      .then((credential) => {
+        const code = String(credential?.code || "").replace(/\D+/g, "").slice(0, 6);
+        if (code.length === 6) {
+          handleOtpInput(code);
+        }
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, [requestId, step]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -47,7 +119,7 @@ export function LoginForm() {
     setPhone(currentPhone);
 
     if (!requestId) {
-      setError("ابتدا کد تایید را دریافت کنید.");
+      setError(labels.otpRequiredFirst);
       setStep("phone");
       setLoading(false);
       return;
@@ -56,28 +128,29 @@ export function LoginForm() {
     const codeToVerify = toEnglishDigits(codeOverride || otpCode).replace(/\D+/g, "").slice(0, 6);
 
     if (codeToVerify.length !== 6) {
-      setError("کد تایید باید ۶ رقم باشد.");
+      setError(labels.invalidOtpMessage);
       setLoading(false);
       return;
     }
 
-    const result = await signIn("credentials", {
-      email: "",
-      password: "",
-      phone: currentPhone,
-      otpCode: codeToVerify,
-      requestId,
-      redirect: false,
-      callbackUrl: "/app"
+    const response = await fetch("/api/auth/otp-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone: currentPhone,
+        otpCode: codeToVerify,
+        requestId,
+      }),
     });
+    const data = await response.json().catch(() => ({}));
 
-    if (result?.error) {
-      setError("کد تایید صحیح نیست یا منقضی شده است.");
+    if (!response.ok) {
+      setError(data.error || labels.verifyCodeFailed);
       setLoading(false);
       return;
     }
 
-    window.location.href = "/app";
+    window.location.href = data.redirectTo || "/app";
   }
 
   function handleOtpInput(value: string) {
@@ -100,7 +173,7 @@ export function LoginForm() {
     setPhone(currentPhone);
 
     if (!currentPhoneIsValid) {
-      setError("شماره موبایل باید دقیقا ۱۱ رقم و مثل 09104875928 باشد.");
+      setError(labels.invalidPhoneMessage);
       return;
     }
     setLoading(true);
@@ -109,16 +182,17 @@ export function LoginForm() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone: currentPhone })
     });
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setError(data.error || "ارسال کد انجام نشد.");
+      setError(data.error || labels.sendCodeFailed);
       setLoading(false);
       return;
     }
     setRequestId(data.requestId);
     setOtpCode("");
     setStep("code");
-    setNotice("کد تایید ارسال شد.");
+    setNotice(labels.codeSentNotice);
+    setResendCountdown(90);
     setLoading(false);
     window.setTimeout(() => codeInputRef.current?.focus(), 50);
   }
@@ -128,7 +202,7 @@ export function LoginForm() {
       {step === "phone" ? (
         <>
           <label>
-            <span>شماره موبایل</span>
+            <span>{labels.phoneNumber}</span>
             <input
               ref={phoneInputRef}
               value={normalizedPhone}
@@ -140,48 +214,59 @@ export function LoginForm() {
               inputMode="numeric"
               maxLength={11}
               pattern="09[0-9]{9}"
-              placeholder="09104875928"
+              placeholder={labels.loginPhonePlaceholder}
               required
             />
           </label>
           <button className="primary-btn" type="submit" disabled={loading}>
-            {loading ? "در حال ارسال..." : "ارسال کد"}
+            {loading ? labels.sendingCode : labels.sendCode}
           </button>
         </>
       ) : (
         <>
           <div className="otp-summary">
-            <span>کد تایید برای این شماره ارسال شد</span>
+            <span>{labels.codeSentTo}</span>
             <strong>{normalizedPhone}</strong>
             <button
               type="button"
               onClick={() => {
                 setStep("phone");
                 setOtpCode("");
+                setRequestId("");
+                setResendCountdown(0);
                 setError("");
                 setNotice("");
                 window.setTimeout(() => phoneInputRef.current?.focus(), 50);
               }}
             >
-              تغییر شماره
+              {labels.changePhone}
             </button>
           </div>
           <label>
-            <span>کد تایید</span>
+            <span>{labels.verifyingCodeTitle}</span>
             <input
               ref={codeInputRef}
               value={normalizedOtpCode}
               onInput={(event) => handleOtpInput(event.currentTarget.value)}
               onChange={(event) => handleOtpInput(event.target.value)}
               inputMode="numeric"
+              autoComplete="one-time-code"
               maxLength={6}
               pattern="[0-9]{6}"
               placeholder="123456"
               required
             />
           </label>
-          <button className="ghost-btn" type="button" onClick={() => void sendCode()} disabled={loading}>
-            ارسال دوباره کد
+          <p className="empty-text">{labels.autoReadHint}</p>
+          <button
+            className="ghost-btn"
+            type="button"
+            onClick={() => void sendCode()}
+            disabled={loading || resendCountdown > 0}
+          >
+            {resendCountdown > 0
+              ? `${labels.resendAvailableIn} ${resendCountdown}`
+              : labels.resendCode}
           </button>
         </>
       )}
@@ -189,7 +274,7 @@ export function LoginForm() {
       {notice ? <p className="success-text">{notice}</p> : null}
       {step === "code" ? (
         <button className="primary-btn" type="submit" disabled={loading}>
-          {loading ? "در حال بررسی..." : "تایید کد"}
+          {loading ? labels.verifyingCode : labels.verifyCode}
         </button>
       ) : null}
     </form>

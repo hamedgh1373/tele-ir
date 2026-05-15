@@ -24,7 +24,14 @@ function normalizeOriginCandidate(value: string | null) {
 
 function getExpectedOrigin(request: NextRequest) {
   const proto = request.headers.get("x-forwarded-proto") || request.nextUrl.protocol.replace(":", "") || "http";
-  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || request.nextUrl.host;
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedPort = request.headers.get("x-forwarded-port");
+  const baseHost = forwardedHost || request.headers.get("host") || request.nextUrl.host;
+  const needsPort =
+    forwardedPort &&
+    !baseHost.includes(":") &&
+    !((proto === "http" && forwardedPort === "80") || (proto === "https" && forwardedPort === "443"));
+  const host = needsPort ? `${baseHost}:${forwardedPort}` : baseHost;
   if (!host) return null;
   return `${proto}://${host}`;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useI18n } from "@/components/i18n-provider";
 
 export type UserItem = {
   id: string;
@@ -34,11 +35,11 @@ type BackupInitial = {
 
 type AdminSection = "users" | "sms" | "backups";
 
-function formatAdminDate(value?: string) {
+function formatAdminDate(value: string | undefined, localeTag: string) {
   if (!value) {
     return "";
   }
-  return new Intl.DateTimeFormat("fa-IR", {
+  return new Intl.DateTimeFormat(localeTag, {
     dateStyle: "short",
     timeStyle: "short",
     timeZone: "Asia/Tehran"
@@ -58,6 +59,7 @@ export function AdminConsole({
   initialBackups?: BackupItem[];
   initialSection?: AdminSection;
 }) {
+  const { t, localeTag } = useI18n();
   const [users, setUsers] = useState<UserItem[]>(initialUsers);
   const [name, setName] = useState("");
   const [role, setRole] = useState<"admin" | "user">("user");
@@ -148,13 +150,13 @@ export function AdminConsole({
     const data = await response.json();
 
     if (!response.ok) {
-      setMessage(data.error || "خطا در ذخیره کاربر");
+      setMessage(t("saveUserFailed"));
       setLoading(false);
       return;
     }
 
     resetForm();
-    setMessage(editingUser ? "کاربر با موفقیت ویرایش شد." : "کاربر با موفقیت اضافه شد.");
+    setMessage(t("saveSuccessUser"));
     await loadUsers();
     setLoading(false);
   }
@@ -191,11 +193,11 @@ export function AdminConsole({
     });
     const data = await response.json();
     if (!response.ok) {
-      setSmsStatus(data.error || "خطا در ذخیره تنظیمات پیامک");
+      setSmsStatus(t("saveSmsFailed"));
       return;
     }
     setSmsApiKey("");
-    setSmsStatus("تنظیمات پیامک ذخیره شد.");
+    setSmsStatus(t("saveSuccessSms"));
     await loadSmsSettings();
   }
 
@@ -212,10 +214,10 @@ export function AdminConsole({
     });
     const data = await response.json();
     if (!response.ok) {
-      setBackupStatus(data.error || "خطا در ذخیره تنظیمات بکاپ");
+      setBackupStatus(t("saveBackupFailed"));
       return;
     }
-    setBackupStatus("تنظیمات بکاپ ذخیره شد.");
+    setBackupStatus(t("saveSuccessBackup"));
   }
 
   async function runBackupNow() {
@@ -223,10 +225,10 @@ export function AdminConsole({
     const response = await fetch("/api/admin/backup/run", { method: "POST" });
     const data = await response.json();
     if (!response.ok) {
-      setBackupStatus(data.error || "خطا در اجرای بکاپ");
+      setBackupStatus(t("runBackupFailed"));
       return;
     }
-    setBackupStatus("بکاپ کامل و بکاپ چت/فایل ساخته شد.");
+    setBackupStatus(t("backupRunSuccess"));
     await loadBackups();
   }
 
@@ -234,7 +236,7 @@ export function AdminConsole({
     if (!selectedBackup) {
       return;
     }
-    const sure = window.confirm("بازیابی بکاپ کل دیتابیس فعلی را جایگزین می‌کند. ادامه می‌دهید؟");
+    const sure = window.confirm(t("restoreBackupConfirm"));
     if (!sure) {
       return;
     }
@@ -246,16 +248,16 @@ export function AdminConsole({
     });
     const data = await response.json();
     if (!response.ok) {
-      setBackupStatus(data.error || "خطا در بازیابی بکاپ");
+      setBackupStatus(t("restoreBackupFailed"));
       return;
     }
-    setBackupStatus("بکاپ بازیابی شد.");
+    setBackupStatus(t("backupRestoreSuccess"));
   }
 
   return (
     <section className="admin-console">
       <aside className="admin-nav">
-        <strong>مدیریت</strong>
+        <strong>{t("management")}</strong>
         <a
           href="/admin?section=users"
           className={activeSection === "users" ? "active" : ""}
@@ -265,7 +267,7 @@ export function AdminConsole({
             setActiveSection("users");
           }}
         >
-          کاربران
+          {t("users")}
         </a>
         <a
           href="/admin?section=sms"
@@ -276,7 +278,7 @@ export function AdminConsole({
             setActiveSection("sms");
           }}
         >
-          پیامک
+          {t("sms")}
         </a>
         <a
           href="/admin?section=backups"
@@ -287,7 +289,7 @@ export function AdminConsole({
             setActiveSection("backups");
           }}
         >
-          بکاپ
+          {t("backups")}
         </a>
       </aside>
 
@@ -297,16 +299,16 @@ export function AdminConsole({
             <form id="users" className="panel-card stack-form" onSubmit={handleSubmit}>
               <div className="panel-title-row">
                 <div>
-                  <h2>{editingUser ? "ویرایش کاربر" : "ساخت کاربر جدید"}</h2>
-                  <p>دسترسی، شماره ورود و محدودیت آپلود را مدیریت کنید.</p>
+                  <h2>{editingUser ? t("editUser") : t("createUser")}</h2>
+                  <p>{t("userFormHint")}</p>
                 </div>
               </div>
               <label>
-                <span>نام</span>
+                <span>{t("name")}</span>
                 <input value={name} onChange={(event) => setName(event.target.value)} required />
               </label>
               <label>
-                <span>شماره موبایل</span>
+                <span>{t("phoneNumber")}</span>
                 <input
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
@@ -316,14 +318,14 @@ export function AdminConsole({
               </label>
               <div className="two-col-form">
                 <label>
-                  <span>نقش کاربر</span>
+                  <span>{t("userRole")}</span>
                   <select value={role} onChange={(event) => setRole(event.target.value as "admin" | "user")}>
-                    <option value="user">کاربر عادی</option>
-                    <option value="admin">ادمین</option>
+                    <option value="user">{t("regularUser")}</option>
+                    <option value="admin">{t("admin")}</option>
                   </select>
                 </label>
                 <label>
-                  <span>سقف آپلود هر فایل (MB)</span>
+                  <span>{t("uploadLimitMb")}</span>
                   <input
                     type="number"
                     min="1"
@@ -337,11 +339,11 @@ export function AdminConsole({
               {message ? <p className="error-text">{message}</p> : null}
               <div className="form-actions">
                 <button className="primary-btn" type="submit" disabled={loading}>
-                  {loading ? "در حال ذخیره..." : editingUser ? "ذخیره تغییرات" : "افزودن کاربر"}
+                  {loading ? t("saveChanges") : editingUser ? t("saveChanges") : t("addUser")}
                 </button>
                 {editingUser ? (
                   <button className="ghost-btn" type="button" onClick={resetForm}>
-                    انصراف
+                    {t("cancel")}
                   </button>
                 ) : null}
               </div>
@@ -350,8 +352,8 @@ export function AdminConsole({
             <div className="panel-card user-table-card">
               <div className="panel-title-row">
                 <div>
-                  <h2>کاربران</h2>
-                  <p>{users.length} کاربر ثبت شده</p>
+                  <h2>{t("users")}</h2>
+                  <p>{users.length} {t("registeredUsers")}</p>
                 </div>
               </div>
               <div className="admin-user-table">
@@ -365,16 +367,16 @@ export function AdminConsole({
                       </div>
                     </div>
                     <div className="admin-user-meta">
-                      <span className="role-pill">{user.role === "admin" ? "ادمین" : "کاربر"}</span>
+                      <span className="role-pill">{user.role === "admin" ? t("admin") : t("regularUser")}</span>
                       <span className="role-pill">{user.uploadLimitMb || 100} MB</span>
-                      <time suppressHydrationWarning>{formatAdminDate(user.updatedAt || user.createdAt)}</time>
+                      <time suppressHydrationWarning>{formatAdminDate(user.updatedAt || user.createdAt, localeTag)}</time>
                       <button className="ghost-btn" type="button" onClick={() => startEdit(user)}>
-                        ویرایش
+                        {t("editUser")}
                       </button>
                     </div>
                   </div>
                 ))}
-                {users.length === 0 ? <p className="empty-text">هنوز کاربری ثبت نشده است.</p> : null}
+                {users.length === 0 ? <p className="empty-text">{t("noUsersYet")}</p> : null}
               </div>
             </div>
           </div>
@@ -384,24 +386,24 @@ export function AdminConsole({
           <div id="sms" className="panel-card admin-single-panel">
             <div className="panel-title-row">
               <div>
-                <h2>تنظیمات ورود پیامکی</h2>
-                <p>اتصال SMS.ir و قالب ارسال کد ورود را تنظیم کنید.</p>
+                <h2>{t("smsSettingsTitle")}</h2>
+                <p>{t("smsSettingsSubtitle")}</p>
               </div>
-              <span className={smsEnabled ? "status-pill on" : "status-pill"}>{smsEnabled ? "فعال" : "غیرفعال"}</span>
+              <span className={smsEnabled ? "status-pill on" : "status-pill"}>{smsEnabled ? t("enabled") : t("disabled")}</span>
             </div>
             <div className="stack-form">
               <label>
-                <span>فعال‌سازی OTP پیامکی</span>
+                <span>{t("enableSmsOtp")}</span>
                 <select
                   value={smsEnabled ? "1" : "0"}
                   onChange={(event) => setSmsEnabled(event.target.value === "1")}
                 >
-                  <option value="1">فعال</option>
-                  <option value="0">غیرفعال</option>
+                  <option value="1">{t("enabled")}</option>
+                  <option value="0">{t("disabled")}</option>
                 </select>
               </label>
               <label>
-                <span>API Key جدید</span>
+                <span>{t("newApiKey")}</span>
                 <input
                   value={smsApiKey}
                   onChange={(event) => setSmsApiKey(event.target.value)}
@@ -410,7 +412,7 @@ export function AdminConsole({
               </label>
               <div className="two-col-form">
                 <label>
-                  <span>Line Number</span>
+                  <span>{t("lineNumber")}</span>
                   <input
                     value={smsLineNumber}
                     onChange={(event) => setSmsLineNumber(event.target.value)}
@@ -418,7 +420,7 @@ export function AdminConsole({
                   />
                 </label>
                 <label>
-                  <span>Template ID</span>
+                  <span>{t("templateId")}</span>
                   <input
                     type="number"
                     min="1"
@@ -429,7 +431,7 @@ export function AdminConsole({
                 </label>
               </div>
               <label>
-                <span>متغیر کد قالب</span>
+                <span>{t("templateCodeVariable")}</span>
                 <input
                   value={smsTemplateVariable}
                   onChange={(event) => setSmsTemplateVariable(event.target.value.toUpperCase())}
@@ -439,7 +441,7 @@ export function AdminConsole({
               {smsStatus ? <p className="error-text">{smsStatus}</p> : null}
               <div className="form-actions">
                 <button className="primary-btn" type="button" onClick={() => void saveSmsSettings()}>
-                  ذخیره تنظیمات پیامک
+                  {t("saveSmsSettings")}
                 </button>
               </div>
             </div>
@@ -451,25 +453,25 @@ export function AdminConsole({
             <div className="panel-card">
               <div className="panel-title-row">
                 <div>
-                  <h2>تنظیمات بکاپ</h2>
-                  <p>زمان‌بندی، نگهداری و اجرای دستی بکاپ‌ها</p>
+                  <h2>{t("backupSettingsTitle")}</h2>
+                  <p>{t("backupSettingsSubtitle")}</p>
                 </div>
-                <span className={backupEnabled ? "status-pill on" : "status-pill"}>{backupEnabled ? "فعال" : "غیرفعال"}</span>
+                <span className={backupEnabled ? "status-pill on" : "status-pill"}>{backupEnabled ? t("enabled") : t("disabled")}</span>
               </div>
               <div className="stack-form">
                 <label>
-                  <span>فعال‌سازی بکاپ زمان‌بندی‌شده</span>
+                  <span>{t("enableScheduledBackup")}</span>
                   <select
                     value={backupEnabled ? "1" : "0"}
                     onChange={(event) => setBackupEnabled(event.target.value === "1")}
                   >
-                    <option value="1">فعال</option>
-                    <option value="0">غیرفعال</option>
+                    <option value="1">{t("enabled")}</option>
+                    <option value="0">{t("disabled")}</option>
                   </select>
                 </label>
                 <div className="two-col-form">
                   <label>
-                    <span>فاصله بکاپ (ساعت)</span>
+                    <span>{t("backupIntervalHours")}</span>
                     <input
                       type="number"
                       min="1"
@@ -479,7 +481,7 @@ export function AdminConsole({
                     />
                   </label>
                   <label>
-                    <span>تعداد نگهداری</span>
+                    <span>{t("retainCount")}</span>
                     <input
                       type="number"
                       min="1"
@@ -491,10 +493,10 @@ export function AdminConsole({
                 </div>
                 <div className="form-actions">
                   <button className="primary-btn" type="button" onClick={() => void saveBackupSettings()}>
-                    ذخیره تنظیمات
+                    {t("saveSettings")}
                   </button>
                   <button className="ghost-btn" type="button" onClick={() => void runBackupNow()}>
-                    اجرای بکاپ دستی
+                    {t("runManualBackup")}
                   </button>
                 </div>
                 {backupStatus ? <p className="error-text">{backupStatus}</p> : null}
@@ -504,21 +506,21 @@ export function AdminConsole({
             <div className="panel-card">
               <div className="panel-title-row">
                 <div>
-                  <h2>فایل‌های بکاپ</h2>
-                  <p>{backups.length} فایل در دسترس</p>
+                  <h2>{t("backupFiles")}</h2>
+                  <p>{backups.length} {t("filesAvailable")}</p>
                 </div>
               </div>
               <div className="stack-form">
                 <label>
-                  <span>انتخاب فایل</span>
+                  <span>{t("selectFile")}</span>
                   <select
                     value={selectedBackup}
                     onChange={(event) => setSelectedBackup(event.target.value)}
                   >
-                    <option value="">انتخاب کنید</option>
+                    <option value="">{t("selectOption")}</option>
                     {backups.map((item) => (
                       <option key={item.name} value={item.name}>
-                        {item.type === "full" ? "FULL" : "CHATS"} - {item.name}
+                        {item.type === "full" ? t("fullBackup") : t("chatsFilesBackup")} - {item.name}
                       </option>
                     ))}
                   </select>
@@ -531,7 +533,7 @@ export function AdminConsole({
                       className={item.name === selectedBackup ? "selected" : ""}
                       onClick={() => setSelectedBackup(item.name)}
                     >
-                      <strong>{item.type === "full" ? "Full backup" : "Chats and files"}</strong>
+                      <strong>{item.type === "full" ? t("fullBackup") : t("chatsFilesBackup")}</strong>
                       <span>{item.name}</span>
                     </button>
                   ))}
@@ -541,10 +543,10 @@ export function AdminConsole({
                     className="ghost-btn"
                     href={selectedBackup ? `/api/admin/backup/download/${encodeURIComponent(selectedBackup)}` : "#"}
                   >
-                    دانلود بکاپ
+                    {t("downloadBackup")}
                   </a>
                   <button className="ghost-btn danger" type="button" onClick={() => void restoreSelectedBackup()}>
-                    بازیابی بکاپ
+                    {t("restoreBackup")}
                   </button>
                 </div>
               </div>

@@ -2,7 +2,13 @@ import { randomUUID } from "crypto";
 import { encode } from "next-auth/jwt";
 import { NextResponse } from "next/server";
 import { getTeleirDb } from "@/lib/mongodb";
-import { consumeRateLimit, getClientIpFromHeaders, hashOtpCode, secureCookieOptions } from "@/lib/security";
+import {
+  consumeRateLimit,
+  getClientIpFromHeaders,
+  getSessionCookieName,
+  hashOtpCode,
+  secureCookieOptions,
+} from "@/lib/security";
 import { normalizeIranPhone } from "@/lib/sms";
 
 type DbUser = {
@@ -77,7 +83,11 @@ function redirectWithError(error: string) {
 }
 
 export async function POST(request: Request) {
-  const body = Object.fromEntries((await request.formData().catch(() => new FormData())).entries());
+  const contentType = request.headers.get("content-type") || "";
+  const wantsJson = contentType.includes("application/json");
+  const body = wantsJson
+    ? await request.json().catch(() => null)
+    : Object.fromEntries((await request.formData().catch(() => new FormData())).entries());
   const phoneInput = String(body.phone || "");
   const requestId = String(body.requestId || "").trim();
   const otpCode = String(body.otpCode || "").replace(/\D+/g, "").slice(0, 6);
@@ -85,6 +95,9 @@ export async function POST(request: Request) {
   const clientIp = getClientIpFromHeaders(request.headers);
 
   if (!phone || !requestId || otpCode.length !== 6) {
+    if (wantsJson) {
+      return NextResponse.json({ error: "کد یا شماره معتبر نیست." }, { status: 400 });
+    }
     return redirectWithError("کد یا شماره معتبر نیست.");
   }
 
@@ -96,6 +109,9 @@ export async function POST(request: Request) {
     windowMs: 15 * 60 * 1000
   });
   if (!ipLimit.ok) {
+    if (wantsJson) {
+      return NextResponse.json({ error: "تعداد تلاش‌های ورود زیاد شده است. کمی بعد دوباره امتحان کنید." }, { status: 429 });
+    }
     return redirectWithError("تعداد تلاش‌های ورود زیاد شده است. کمی بعد دوباره امتحان کنید.");
   }
 
@@ -110,6 +126,9 @@ export async function POST(request: Request) {
       { id: requestId, usedAt: null },
       { $set: { usedAt: new Date().toISOString(), blockedAt: new Date().toISOString() } }
     );
+    if (wantsJson) {
+      return NextResponse.json({ error: "تعداد تلاش برای این کد بیش از حد مجاز بوده است." }, { status: 429 });
+    }
     return redirectWithError("تعداد تلاش برای این کد بیش از حد مجاز بوده است.");
   }
 
@@ -120,6 +139,9 @@ export async function POST(request: Request) {
   );
 
   if (!user) {
+    if (wantsJson) {
+      return NextResponse.json({ error: "کاربری با این شماره پیدا نشد." }, { status: 404 });
+    }
     return redirectWithError("کاربری با این شماره پیدا نشد.");
   }
 
@@ -132,6 +154,9 @@ export async function POST(request: Request) {
   });
 
   if (!otp || new Date(String(otp.expiresAt)).getTime() < Date.now()) {
+    if (wantsJson) {
+      return NextResponse.json({ error: "کد تایید صحیح نیست یا منقضی شده است." }, { status: 400 });
+    }
     return redirectWithError("کد تایید صحیح نیست یا منقضی شده است.");
   }
 
@@ -153,10 +178,12 @@ export async function POST(request: Request) {
       sid
     }
   });
-  const response = redirectTo("/app");
+  const response = wantsJson
+    ? NextResponse.json({ ok: true, redirectTo: "/app" })
+    : redirectTo("/app");
 
-  response.cookies.set("next-auth.session-token", token, {
-    ...secureCookieOptions(maxAge)
+  response.cookies.set(getSessionCookieName(request), token, {
+    ...secureCookieOptions(maxAge, request)
   });
   response.cookies.delete(otpCookieName);
   response.cookies.delete(otpErrorCookieName);

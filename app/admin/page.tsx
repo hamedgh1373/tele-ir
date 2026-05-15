@@ -9,6 +9,8 @@ import {
 import { getDb } from "@/lib/chat";
 import { getBackupSettings, listBackups } from "@/lib/backup";
 import { getSmsSettings, maskApiKey } from "@/lib/sms";
+import { getDictionary } from "@/lib/i18n";
+import { getRequestLocale } from "@/lib/locale";
 
 type AdminSection = "users" | "sms" | "backups";
 
@@ -26,6 +28,9 @@ export default async function AdminPage({
   searchParams?: Promise<{ section?: string }>;
 }) {
   const session = await requireAdmin();
+  void session;
+  const locale = await getRequestLocale();
+  const t = getDictionary(locale);
   const params = (await searchParams) || {};
   const initialSection = getSection(params.section);
   const db = await getDb();
@@ -46,11 +51,11 @@ export default async function AdminPage({
         <div className="page-title-with-brand">
           <BrandMark size="sm" />
           <div>
-            <h1>پنل ادمین</h1>
-            <p>مدیریت کاربران، پیامک و بکاپ‌ها</p>
+            <h1>{t.adminPanel}</h1>
+            <p>{t.adminSubtitle}</p>
           </div>
         </div>
-        <Link href="/app">بازگشت به پیام‌ها</Link>
+        <Link href="/app">{t.backToMessages}</Link>
       </div>
       <AdminConsole
         initialUsers={users}

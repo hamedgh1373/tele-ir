@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useI18n } from "@/components/i18n-provider";
 
 export function PrivacySettings() {
+  const { t } = useI18n();
   const [passcodeEnabled, setPasscodeEnabled] = useState(false);
   const [status, setStatus] = useState("");
 
@@ -11,38 +13,38 @@ export function PrivacySettings() {
   }, []);
 
   function savePasscode() {
-    const value = window.prompt("New local passcode");
+    const value = window.prompt(t("changePasscode"));
     if (!value || value.trim().length < 4) {
-      setStatus("رمز باید حداقل ۴ کاراکتر باشد.");
+      setStatus(t("passcodeMinLength"));
       return;
     }
     localStorage.setItem("teleir-passcode", value.trim());
     localStorage.setItem("teleir-passcode-enabled", "1");
     setPasscodeEnabled(true);
-    setStatus("Passcode lock فعال شد. این قفل محلی مرورگر است و جایگزین رمزنگاری سراسری نیست.");
+    setStatus(t("passcodeEnabledStatus"));
   }
 
   function disablePasscode() {
     localStorage.removeItem("teleir-passcode");
     localStorage.removeItem("teleir-passcode-enabled");
     setPasscodeEnabled(false);
-    setStatus("Passcode lock غیرفعال شد.");
+    setStatus(t("passcodeDisabledStatus"));
   }
 
   return (
     <section className="panel-card" id="privacy">
       <div className="panel-title-row">
         <div>
-          <h2>Privacy & Security</h2>
-          <p>قفل محلی برنامه و کنترل پایه حریم خصوصی.</p>
+          <h2>{t("privacyTitle")}</h2>
+          <p>{t("privacySubtitle")}</p>
         </div>
       </div>
       <div className="form-actions">
         <button className="ghost-btn" type="button" onClick={savePasscode}>
-          {passcodeEnabled ? "Change passcode" : "Enable passcode lock"}
+          {passcodeEnabled ? t("changePasscode") : t("enablePasscode")}
         </button>
         <button className="ghost-btn danger" type="button" onClick={disablePasscode} disabled={!passcodeEnabled}>
-          Disable passcode
+          {t("disablePasscode")}
         </button>
       </div>
       {status ? <p className="status-line">{status}</p> : null}

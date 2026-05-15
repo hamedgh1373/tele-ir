@@ -76,11 +76,38 @@ export function hashOtpCode(code: string) {
   return createHash("sha256").update(code).digest("hex");
 }
 
-export function secureCookieOptions(maxAge: number) {
+function getHeaderValue(input: Request | Headers, name: string) {
+  if (input instanceof Headers) {
+    return input.get(name);
+  }
+  return input.headers.get(name);
+}
+
+export function shouldUseSecureCookies(input?: Request | Headers) {
+  const forwardedProto = input ? getHeaderValue(input, "x-forwarded-proto") : null;
+  if (forwardedProto) {
+    return forwardedProto.split(",")[0]?.trim().toLowerCase() === "https";
+  }
+
+  const nextAuthUrl = process.env.NEXTAUTH_URL?.trim().toLowerCase();
+  if (nextAuthUrl) {
+    return nextAuthUrl.startsWith("https://");
+  }
+
+  return isProduction();
+}
+
+export function getSessionCookieName(input?: Request | Headers) {
+  return shouldUseSecureCookies(input)
+    ? "__Secure-next-auth.session-token"
+    : "next-auth.session-token";
+}
+
+export function secureCookieOptions(maxAge: number, input?: Request | Headers) {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
-    secure: isProduction(),
+    secure: shouldUseSecureCookies(input),
     path: "/",
     maxAge
   };
